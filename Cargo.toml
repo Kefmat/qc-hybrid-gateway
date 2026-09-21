@@ -1,0 +1,34 @@
+[package]
+name = "pqc-hybrid-gateway"
+version = "0.1.0"
+edition = "2021"
+authors = ["Kevinmat <kevin_mata98@hotmail.com>"]
+description = "High-performance Post-Quantum Hybrid Cryptographic Gateway implementing ML-KEM-768/X25519 KEM and ML-DSA-65/Ed25519 signatures with AEAD transport."
+
+[dependencies]
+# Post-Quantum Cryptography (FIPS 203 ML-KEM / Kyber & FIPS 204 ML-DSA / Dilithium)
+pqcrypto-kyber = "0.8"
+pqcrypto-dilithium = "0.5"
+pqcrypto-traits = "0.3"
+
+# Classical Cryptographic Primitives
+x25519-dalek = { version = "2.0", features = ["static_secrets"] }
+ed25519-dalek = { version = "2.1", features = ["rand_core"] }
+
+# Symmetric AEAD & Hashing / KDF
+chacha20poly1305 = "0.10"
+hkdf = "0.12"
+sha2 = "0.10"
+sha3 = "0.10"
+rand = "0.8"
+zeroize = { version = "1.8", features = ["derive"] }
+
+# Asynchronous Runtime & Networking
+tokio = { version = "1.40", features = ["full"] }
+bytes = "1.7"
+
+# CLI & Telemetry
+clap = { version = "4.5", features = ["derive"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+thiserror = "1.0"
