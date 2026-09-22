@@ -6,6 +6,7 @@ use pqcrypto_dilithium::dilithium3::{
     detached_sign, keypair, verify_detached_signature, DetachedSignature as DilithiumSignature,
     PublicKey as DilithiumPublicKey, SecretKey as DilithiumSecretKey,
 };
+use pqcrypto_traits::sign::{DetachedSignature as _, PublicKey as _};
 use rand::rngs::OsRng;
 use zeroize::Zeroize;
 
@@ -13,6 +14,31 @@ use zeroize::Zeroize;
 pub struct HybridSigPublicKey {
     pub ed25519_pk: [u8; 32],
     pub dilithium_pk: DilithiumPublicKey,
+}
+
+impl HybridSigPublicKey {
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let mut bytes = Vec::with_capacity(32 + self.dilithium_pk.as_bytes().len());
+        bytes.extend_from_slice(&self.ed25519_pk);
+        bytes.extend_from_slice(self.dilithium_pk.as_bytes());
+        bytes
+    }
+
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
+        if bytes.len() < 32 {
+            return Err("Byte slice too short for HybridSigPublicKey".to_string());
+        }
+        let mut ed25519_pk = [0u8; 32];
+        ed25519_pk.copy_from_slice(&bytes[..32]);
+
+        let dilithium_pk = DilithiumPublicKey::from_bytes(&bytes[32..])
+            .map_err(|e| format!("Failed to parse Dilithium public key: {:?}", e))?;
+
+        Ok(Self {
+            ed25519_pk,
+            dilithium_pk,
+        })
+    }
 }
 
 pub struct HybridSigSecretKey {
@@ -35,6 +61,31 @@ pub struct HybridSigKeyPair {
 pub struct HybridSignature {
     pub ed25519_sig: [u8; 64],
     pub dilithium_sig: DilithiumSignature,
+}
+
+impl HybridSignature {
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let mut bytes = Vec::with_capacity(64 + self.dilithium_sig.as_bytes().len());
+        bytes.extend_from_slice(&self.ed25519_sig);
+        bytes.extend_from_slice(self.dilithium_sig.as_bytes());
+        bytes
+    }
+
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
+        if bytes.len() < 64 {
+            return Err("Byte slice too short for HybridSignature".to_string());
+        }
+        let mut ed25519_sig = [0u8; 64];
+        ed25519_sig.copy_from_slice(&bytes[..64]);
+
+        let dilithium_sig = DilithiumSignature::from_bytes(&bytes[64..])
+            .map_err(|e| format!("Failed to parse Dilithium signature: {:?}", e))?;
+
+        Ok(Self {
+            ed25519_sig,
+            dilithium_sig,
+        })
+    }
 }
 
 impl HybridSigKeyPair {
@@ -86,4 +137,30 @@ pub fn verify_hybrid(
     }
 
     verify_detached_signature(&signature.dilithium_sig, message, &pk.dilithium_pk).is_ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_public_key_serialization() {
+        let pair = HybridSigKeyPair::generate();
+        let bytes = pair.public_key.to_bytes();
+        let decoded = HybridSigPublicKey::from_bytes(&bytes).expect("deserialization failed");
+
+        assert_eq!(pair.public_key.ed25519_pk, decoded.ed25519_pk);
+        assert_eq!(pair.public_key.dilithium_pk.as_bytes(), decoded.dilithium_pk.as_bytes());
+    }
+
+    #[test]
+    fn test_signature_serialization_and_verification() {
+        let pair = HybridSigKeyPair::generate();
+        let msg = b"serialize-and-verify-this";
+        let signature = sign_hybrid(msg, &pair.secret_key);
+        let bytes = signature.to_bytes();
+        let decoded_sig = HybridSignature::from_bytes(&bytes).expect("signature decode failed");
+
+        assert!(verify_hybrid(msg, &decoded_sig, &pair.public_key));
+    }
 }
