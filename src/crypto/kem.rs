@@ -2,7 +2,7 @@ use pqcrypto_kyber::kyber768::{
     decapsulate, encapsulate, keypair, Ciphertext as KyberCiphertext, PublicKey as KyberPublicKey,
     SecretKey as KyberSecretKey,
 };
-use pqcrypto_traits::kem::SharedSecret as _;
+use pqcrypto_traits::kem::{Ciphertext as _, PublicKey as _, SharedSecret as _};
 use rand::rngs::OsRng;
 use x25519_dalek::{EphemeralSecret, PublicKey as X25519PublicKey, StaticSecret};
 use zeroize::Zeroize;
@@ -13,6 +13,31 @@ use crate::crypto::kdf::derive_hybrid_shared_secret;
 pub struct HybridKemPublicKey {
     pub x25519_pk: [u8; 32],
     pub kyber_pk: KyberPublicKey,
+}
+
+impl HybridKemPublicKey {
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let mut bytes = Vec::with_capacity(32 + self.kyber_pk.as_bytes().len());
+        bytes.extend_from_slice(&self.x25519_pk);
+        bytes.extend_from_slice(self.kyber_pk.as_bytes());
+        bytes
+    }
+
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
+        if bytes.len() < 32 {
+            return Err("Byte slice too short for HybridKemPublicKey".to_string());
+        }
+        let mut x25519_pk = [0u8; 32];
+        x25519_pk.copy_from_slice(&bytes[..32]);
+
+        let kyber_pk = KyberPublicKey::from_bytes(&bytes[32..])
+            .map_err(|e| format!("Failed to parse Kyber public key: {:?}", e))?;
+
+        Ok(Self {
+            x25519_pk,
+            kyber_pk,
+        })
+    }
 }
 
 pub struct HybridKemSecretKey {
@@ -35,6 +60,31 @@ pub struct HybridKemKeyPair {
 pub struct HybridKemCiphertext {
     pub x25519_ephemeral_pk: [u8; 32],
     pub kyber_ct: KyberCiphertext,
+}
+
+impl HybridKemCiphertext {
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let mut bytes = Vec::with_capacity(32 + self.kyber_ct.as_bytes().len());
+        bytes.extend_from_slice(&self.x25519_ephemeral_pk);
+        bytes.extend_from_slice(self.kyber_ct.as_bytes());
+        bytes
+    }
+
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
+        if bytes.len() < 32 {
+            return Err("Byte slice too short for HybridKemCiphertext".to_string());
+        }
+        let mut x25519_ephemeral_pk = [0u8; 32];
+        x25519_ephemeral_pk.copy_from_slice(&bytes[..32]);
+
+        let kyber_ct = KyberCiphertext::from_bytes(&bytes[32..])
+            .map_err(|e| format!("Failed to parse Kyber ciphertext: {:?}", e))?;
+
+        Ok(Self {
+            x25519_ephemeral_pk,
+            kyber_ct,
+        })
+    }
 }
 
 impl HybridKemKeyPair {
@@ -89,4 +139,30 @@ pub fn decapsulate_hybrid(
     let kyber_ss = decapsulate(&ciphertext.kyber_ct, &sk.kyber_sk);
 
     derive_hybrid_shared_secret(classical_ss.as_bytes(), kyber_ss.as_bytes())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_public_key_serialization() {
+        let pair = HybridKemKeyPair::generate();
+        let bytes = pair.public_key.to_bytes();
+        let decoded = HybridKemPublicKey::from_bytes(&bytes).expect("deserialization failed");
+
+        assert_eq!(pair.public_key.x25519_pk, decoded.x25519_pk);
+        assert_eq!(pair.public_key.kyber_pk.as_bytes(), decoded.kyber_pk.as_bytes());
+    }
+
+    #[test]
+    fn test_ciphertext_serialization() {
+        let pair = HybridKemKeyPair::generate();
+        let (ct, _) = encapsulate_hybrid(&pair.public_key);
+        let bytes = ct.to_bytes();
+        let decoded = HybridKemCiphertext::from_bytes(&bytes).expect("deserialization failed");
+
+        assert_eq!(ct.x25519_ephemeral_pk, decoded.x25519_ephemeral_pk);
+        assert_eq!(ct.kyber_ct.as_bytes(), decoded.kyber_ct.as_bytes());
+    }
 }
