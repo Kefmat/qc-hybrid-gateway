@@ -21,6 +21,7 @@ The gateway combines NIST-standardized Post-Quantum Cryptography (PQC) algorithm
 ### 3. Symmetric Transport & Framing
 * **Cipher**: **ChaCha20-Poly1305 AEAD** (RFC 8439)
 * **Session Derivation**: Separate client-to-server and server-to-client unidirectional write keys derived from the master secret bound to the handshake transcript hash.
+* **Wire Protocol Framing**: Versioned binary framing (`PacketFrame`, `PacketType`) with sequence indexing and payload bounds.
 * **Anti-Replay Defense**: Sliding-window bitmask filter detecting replayed and out-of-order packets.
 * **Memory Safety**: Automatic secret key zeroization on drop (`zeroize`).
 
@@ -43,7 +44,7 @@ pqc-hybrid-gateway/
     │   ├── aead.rs         # ChaCha20-Poly1305 Authenticated Encryption
     │   └── kdf.rs          # HKDF-SHA256 Transcript Binding & Session Derivation
     └── protocol/
-        └── mod.rs          # Wire framing and sliding-window anti-replay filter
+        └── mod.rs          # Wire framing (PacketFrame) and sliding-window anti-replay filter
 ```
 
 ---
@@ -60,7 +61,7 @@ cargo test
 ```
 
 ### Run Cryptographic Verification Suite
-Runs full end-to-end verification of KEM exchange, signature validation, AEAD tamper detection, and anti-replay protection:
+Runs full end-to-end verification of KEM exchange, signature validation, AEAD tamper detection, anti-replay protection, and wire framing:
 ```bash
 cargo run -- verify
 ```

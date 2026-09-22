@@ -51,7 +51,7 @@ fn main() {
             println!("--- Running Cryptographic Verification Suite ---");
 
             // 1. Hybrid KEM verification
-            print!("[TEST 1/4] Hybrid KEM (ML-KEM-768 + X25519) Key Exchange... ");
+            print!("[TEST 1/5] Hybrid KEM (ML-KEM-768 + X25519) Key Exchange... ");
             let receiver_keys = HybridKemKeyPair::generate();
             let (ciphertext, sender_shared_secret) = encapsulate_hybrid(&receiver_keys.public_key);
             let receiver_shared_secret = decapsulate_hybrid(&ciphertext, &receiver_keys.secret_key);
@@ -60,7 +60,7 @@ fn main() {
             println!("PASSED");
 
             // 2. Hybrid Signature verification
-            print!("[TEST 2/4] Hybrid Signature (ML-DSA-65 + Ed25519) Sign & Verify... ");
+            print!("[TEST 2/5] Hybrid Signature (ML-DSA-65 + Ed25519) Sign & Verify... ");
             let signer_keys = HybridSigKeyPair::generate();
             let message = b"CRITICAL_AUTH_PAYLOAD_POST_QUANTUM_SECURE";
             let signature = sign_hybrid(message, &signer_keys.secret_key);
@@ -74,7 +74,7 @@ fn main() {
             println!("PASSED");
 
             // 3. AEAD & Transcript Key Derivation
-            print!("[TEST 3/4] AEAD Session Derivation & Tamper Resistance... ");
+            print!("[TEST 3/5] AEAD Session Derivation & Tamper Resistance... ");
             let transcript_hash = [0x42u8; 32];
             let session_keys = derive_session_keys(&sender_shared_secret, &transcript_hash);
             let client_cipher = AeadCipher::new(&session_keys.client_write_key);
@@ -94,13 +94,25 @@ fn main() {
             println!("PASSED");
 
             // 4. Anti-Replay Filter
-            print!("[TEST 4/4] Anti-Replay Sliding Window Filter... ");
+            print!("[TEST 4/5] Anti-Replay Sliding Window Filter... ");
             let mut filter = AntiReplayFilter::new(64);
             assert!(filter.check_and_update(1));
             assert!(filter.check_and_update(2));
             assert!(!filter.check_and_update(1), "Replayed packet seq 1 accepted");
             assert!(filter.check_and_update(100));
             assert!(!filter.check_and_update(10), "Outdated packet accepted");
+            println!("PASSED");
+
+            // 5. Wire Frame Encoding/Decoding
+            print!("[TEST 5/5] Wire Frame Serialization & Framing... ");
+            let frame = pqc_hybrid_gateway::protocol::PacketFrame::new(
+                pqc_hybrid_gateway::protocol::PacketType::Data,
+                42,
+                encrypted,
+            ).expect("Frame creation failed");
+            let encoded = frame.encode();
+            let decoded = pqc_hybrid_gateway::protocol::PacketFrame::decode(&encoded).expect("Frame decode failed");
+            assert_eq!(frame, decoded, "Decoded frame mismatch");
             println!("PASSED");
 
             println!("\nAll cryptographic security verifications completed successfully.");
