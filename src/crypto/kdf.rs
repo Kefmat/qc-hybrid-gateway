@@ -52,3 +52,36 @@ pub fn derive_session_keys(master_shared_secret: &[u8; 32], transcript_hash: &[u
         server_write_key,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_derive_hybrid_shared_secret() {
+        let classical_ss = [0x11u8; 32];
+        let pq_ss = [0x22u8; 32];
+
+        let ss1 = derive_hybrid_shared_secret(&classical_ss, &pq_ss);
+        let ss2 = derive_hybrid_shared_secret(&classical_ss, &pq_ss);
+        assert_eq!(ss1, ss2);
+
+        let ss_diff = derive_hybrid_shared_secret(&classical_ss, &[0x33u8; 32]);
+        assert_ne!(ss1, ss_diff);
+    }
+
+    #[test]
+    fn test_derive_session_keys_uniqueness() {
+        let master_secret = [0x42u8; 32];
+        let transcript = [0x99u8; 32];
+
+        let keys = derive_session_keys(&master_secret, &transcript);
+        assert_ne!(keys.client_write_key, keys.server_write_key);
+
+        let diff_transcript = [0x88u8; 32];
+        let keys_diff = derive_session_keys(&master_secret, &diff_transcript);
+        assert_ne!(keys.client_write_key, keys_diff.client_write_key);
+        assert_ne!(keys.server_write_key, keys_diff.server_write_key);
+    }
+}
+
