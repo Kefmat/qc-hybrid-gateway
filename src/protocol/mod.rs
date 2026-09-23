@@ -165,4 +165,31 @@ mod tests {
 
         assert!(PacketFrame::decode(&bytes).is_err());
     }
+
+    #[test]
+    fn test_packet_frame_oversized_payload() {
+        let oversized = vec![0u8; MAX_FRAME_SIZE + 1];
+        let result = PacketFrame::new(PacketType::Data, 1, oversized);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_anti_replay_filter_detailed() {
+        let mut filter = AntiReplayFilter::new(10);
+        // Initial accept
+        assert!(filter.check_and_update(10));
+        // Duplicate within window rejected
+        assert!(!filter.check_and_update(10));
+        // Out of order within window accepted
+        assert!(filter.check_and_update(5));
+        // Duplicate of out of order rejected
+        assert!(!filter.check_and_update(5));
+        // Packets outside window rejected
+        assert!(!filter.check_and_update(0));
+        // Sequence advance and window pruning
+        assert!(filter.check_and_update(30));
+        assert!(!filter.check_and_update(10)); // now out of window
+        assert!(filter.check_and_update(25)); // within new window (30 - 10 = 20)
+    }
 }
+
