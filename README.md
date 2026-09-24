@@ -73,24 +73,16 @@ cargo run -- keygen
 ```
 
 ### Micro-benchmarks
-Benchmark the cryptographic primitives locally:
+Benchmark the cryptographic primitives (KEM Keygen/Encap/Decap, Signature Sign/Verify, ChaCha20-Poly1305 AEAD Encrypt/Decrypt) locally:
 ```bash
 cargo run --release -- bench
 ```
 
 ---
 
-## GitHub Setup Instructions
+## Security & Implementation Notes
 
-To push this repository to your GitHub account:
+- **Zeroization**: All private keys (`HybridKemSecretKey`, `HybridSigSecretKey`, `SessionKeys`) automatically zeroize underlying memory on drop.
+- **Transcript Binding**: All derived session keys are strictly bound to ephemeral exchange transcripts via HKDF-SHA256.
+- **Anti-Replay Window**: Uses configurable sliding-window bitmask verification (default window: 64 packets) to prevent packet replay attacks.
 
-1. Create a new repository named `pqc-hybrid-gateway` on [GitHub](https://github.com/new) (without initializing a README or .gitignore).
-2. Link your local repository and push:
-```bash
-git init
-git add .
-git commit -m "feat: initial commit for pqc-hybrid-gateway"
-git branch -M main
-git remote add origin https://github.com/Kefmat/pqc-hybrid-gateway.git
-git push -u origin main
-```
