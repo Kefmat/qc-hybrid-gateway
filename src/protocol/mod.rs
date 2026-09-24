@@ -123,10 +123,19 @@ impl PacketFrame {
     }
 }
 
+pub const DEFAULT_REPLAY_WINDOW_SIZE: u64 = 64;
+
+#[derive(Debug, Clone)]
 pub struct AntiReplayFilter {
     window_size: u64,
     highest_seq: u64,
     seen: HashSet<u64>,
+}
+
+impl Default for AntiReplayFilter {
+    fn default() -> Self {
+        Self::new(DEFAULT_REPLAY_WINDOW_SIZE)
+    }
 }
 
 impl AntiReplayFilter {
@@ -136,6 +145,18 @@ impl AntiReplayFilter {
             highest_seq: 0,
             seen: HashSet::new(),
         }
+    }
+
+    pub fn window_size(&self) -> u64 {
+        self.window_size
+    }
+
+    pub fn highest_seq(&self) -> u64 {
+        self.highest_seq
+    }
+
+    pub fn seen_count(&self) -> usize {
+        self.seen.len()
     }
 
     pub fn check_and_update(&mut self, seq: u64) -> bool {
@@ -157,6 +178,7 @@ impl AntiReplayFilter {
         }
     }
 }
+
 
 #[cfg(test)]
 mod tests {
@@ -231,6 +253,19 @@ mod tests {
             "PacketHeader(v1, Data, seq=42, len=128)"
         );
     }
+
+    #[test]
+    fn test_anti_replay_filter_default_and_accessors() {
+        let mut filter = AntiReplayFilter::default();
+        assert_eq!(filter.window_size(), DEFAULT_REPLAY_WINDOW_SIZE);
+        assert_eq!(filter.highest_seq(), 0);
+        assert_eq!(filter.seen_count(), 0);
+
+        filter.check_and_update(100);
+        assert_eq!(filter.highest_seq(), 100);
+        assert_eq!(filter.seen_count(), 1);
+    }
 }
+
 
 
