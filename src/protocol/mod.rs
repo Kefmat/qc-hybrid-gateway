@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::fmt;
 
 pub const PROTOCOL_VERSION: u8 = 1;
 pub const MAX_FRAME_SIZE: usize = 65536;
@@ -11,6 +12,17 @@ pub enum PacketType {
     HandshakeResp = 0x02,
     Data = 0x03,
     Ping = 0x04,
+}
+
+impl fmt::Display for PacketType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            PacketType::HandshakeInit => write!(f, "HandshakeInit"),
+            PacketType::HandshakeResp => write!(f, "HandshakeResp"),
+            PacketType::Data => write!(f, "Data"),
+            PacketType::Ping => write!(f, "Ping"),
+        }
+    }
 }
 
 impl TryFrom<u8> for PacketType {
@@ -34,6 +46,17 @@ pub struct PacketHeader {
     pub seq: u64,
     pub payload_len: u32,
 }
+
+impl fmt::Display for PacketHeader {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "PacketHeader(v{}, {}, seq={}, len={})",
+            self.version, self.packet_type, self.seq, self.payload_len
+        )
+    }
+}
+
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PacketFrame {
@@ -191,5 +214,23 @@ mod tests {
         assert!(!filter.check_and_update(10)); // now out of window
         assert!(filter.check_and_update(25)); // within new window (30 - 10 = 20)
     }
+
+    #[test]
+    fn test_display_implementations() {
+        assert_eq!(PacketType::HandshakeInit.to_string(), "HandshakeInit");
+        assert_eq!(PacketType::Data.to_string(), "Data");
+
+        let header = PacketHeader {
+            version: 1,
+            packet_type: PacketType::Data,
+            seq: 42,
+            payload_len: 128,
+        };
+        assert_eq!(
+            header.to_string(),
+            "PacketHeader(v1, Data, seq=42, len=128)"
+        );
+    }
 }
+
 
