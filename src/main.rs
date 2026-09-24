@@ -165,6 +165,29 @@ fn main() {
             }
             let sig_verify_dur = start.elapsed();
             println!("Hybrid Sig Verify:       {:?} per op", sig_verify_dur / iterations);
+
+            // AEAD ChaCha20-Poly1305 (1 KB payload)
+            let key = [0x42u8; 32];
+            let cipher = AeadCipher::new(&key);
+            let payload_1kb = vec![0x37u8; 1024];
+            let aad = b"seq-benchmark";
+            let aead_iters = 10_000;
+
+            let start = Instant::now();
+            for i in 0..aead_iters {
+                let _ = cipher.encrypt(i as u64, aad, &payload_1kb);
+            }
+            let aead_enc_dur = start.elapsed();
+            println!("AEAD Encrypt (1KB):      {:?} per op", aead_enc_dur / aead_iters);
+
+            let encrypted_1kb = cipher.encrypt(1, aad, &payload_1kb).unwrap();
+            let start = Instant::now();
+            for _ in 0..aead_iters {
+                let _ = cipher.decrypt(1, aad, &encrypted_1kb);
+            }
+            let aead_dec_dur = start.elapsed();
+            println!("AEAD Decrypt (1KB):      {:?} per op", aead_dec_dur / aead_iters);
         }
     }
 }
+
