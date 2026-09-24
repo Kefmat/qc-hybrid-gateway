@@ -10,28 +10,31 @@ use pqcrypto_traits::sign::{DetachedSignature as _, PublicKey as _};
 use rand::rngs::OsRng;
 use zeroize::Zeroize;
 
+pub const ED25519_PUBLIC_KEY_SIZE: usize = 32;
+pub const ED25519_SIGNATURE_SIZE: usize = 64;
+
 #[derive(Clone)]
 pub struct HybridSigPublicKey {
-    pub ed25519_pk: [u8; 32],
+    pub ed25519_pk: [u8; ED25519_PUBLIC_KEY_SIZE],
     pub dilithium_pk: DilithiumPublicKey,
 }
 
 impl HybridSigPublicKey {
     pub fn to_bytes(&self) -> Vec<u8> {
-        let mut bytes = Vec::with_capacity(32 + self.dilithium_pk.as_bytes().len());
+        let mut bytes = Vec::with_capacity(ED25519_PUBLIC_KEY_SIZE + self.dilithium_pk.as_bytes().len());
         bytes.extend_from_slice(&self.ed25519_pk);
         bytes.extend_from_slice(self.dilithium_pk.as_bytes());
         bytes
     }
 
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
-        if bytes.len() < 32 {
+        if bytes.len() < ED25519_PUBLIC_KEY_SIZE {
             return Err("Byte slice too short for HybridSigPublicKey".to_string());
         }
-        let mut ed25519_pk = [0u8; 32];
-        ed25519_pk.copy_from_slice(&bytes[..32]);
+        let mut ed25519_pk = [0u8; ED25519_PUBLIC_KEY_SIZE];
+        ed25519_pk.copy_from_slice(&bytes[..ED25519_PUBLIC_KEY_SIZE]);
 
-        let dilithium_pk = DilithiumPublicKey::from_bytes(&bytes[32..])
+        let dilithium_pk = DilithiumPublicKey::from_bytes(&bytes[ED25519_PUBLIC_KEY_SIZE..])
             .map_err(|e| format!("Failed to parse Dilithium public key: {:?}", e))?;
 
         Ok(Self {
@@ -42,7 +45,7 @@ impl HybridSigPublicKey {
 }
 
 pub struct HybridSigSecretKey {
-    pub ed25519_sk: [u8; 32],
+    pub ed25519_sk: [u8; ED25519_PUBLIC_KEY_SIZE],
     pub dilithium_sk: DilithiumSecretKey,
 }
 
@@ -59,26 +62,26 @@ pub struct HybridSigKeyPair {
 
 #[derive(Clone)]
 pub struct HybridSignature {
-    pub ed25519_sig: [u8; 64],
+    pub ed25519_sig: [u8; ED25519_SIGNATURE_SIZE],
     pub dilithium_sig: DilithiumSignature,
 }
 
 impl HybridSignature {
     pub fn to_bytes(&self) -> Vec<u8> {
-        let mut bytes = Vec::with_capacity(64 + self.dilithium_sig.as_bytes().len());
+        let mut bytes = Vec::with_capacity(ED25519_SIGNATURE_SIZE + self.dilithium_sig.as_bytes().len());
         bytes.extend_from_slice(&self.ed25519_sig);
         bytes.extend_from_slice(self.dilithium_sig.as_bytes());
         bytes
     }
 
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
-        if bytes.len() < 64 {
+        if bytes.len() < ED25519_SIGNATURE_SIZE {
             return Err("Byte slice too short for HybridSignature".to_string());
         }
-        let mut ed25519_sig = [0u8; 64];
-        ed25519_sig.copy_from_slice(&bytes[..64]);
+        let mut ed25519_sig = [0u8; ED25519_SIGNATURE_SIZE];
+        ed25519_sig.copy_from_slice(&bytes[..ED25519_SIGNATURE_SIZE]);
 
-        let dilithium_sig = DilithiumSignature::from_bytes(&bytes[64..])
+        let dilithium_sig = DilithiumSignature::from_bytes(&bytes[ED25519_SIGNATURE_SIZE..])
             .map_err(|e| format!("Failed to parse Dilithium signature: {:?}", e))?;
 
         Ok(Self {
@@ -87,6 +90,7 @@ impl HybridSignature {
         })
     }
 }
+
 
 impl HybridSigKeyPair {
     pub fn generate() -> Self {

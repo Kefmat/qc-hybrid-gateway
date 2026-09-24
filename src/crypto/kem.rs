@@ -9,26 +9,28 @@ use zeroize::Zeroize;
 
 use crate::crypto::kdf::derive_hybrid_shared_secret;
 
+pub const X25519_KEY_SIZE: usize = 32;
+
 #[derive(Clone)]
 pub struct HybridKemPublicKey {
-    pub x25519_pk: [u8; 32],
+    pub x25519_pk: [u8; X25519_KEY_SIZE],
     pub kyber_pk: KyberPublicKey,
 }
 
 impl HybridKemPublicKey {
     pub fn to_bytes(&self) -> Vec<u8> {
-        let mut bytes = Vec::with_capacity(32 + self.kyber_pk.as_bytes().len());
+        let mut bytes = Vec::with_capacity(X25519_KEY_SIZE + self.kyber_pk.as_bytes().len());
         bytes.extend_from_slice(&self.x25519_pk);
         bytes.extend_from_slice(self.kyber_pk.as_bytes());
         bytes
     }
 
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
-        if bytes.len() < 32 {
+        if bytes.len() < X25519_KEY_SIZE {
             return Err("Byte slice too short for HybridKemPublicKey".to_string());
         }
-        let mut x25519_pk = [0u8; 32];
-        x25519_pk.copy_from_slice(&bytes[..32]);
+        let mut x25519_pk = [0u8; X25519_KEY_SIZE];
+        x25519_pk.copy_from_slice(&bytes[..X25519_KEY_SIZE]);
 
         let kyber_pk = KyberPublicKey::from_bytes(&bytes[32..])
             .map_err(|e| format!("Failed to parse Kyber public key: {:?}", e))?;
@@ -41,7 +43,7 @@ impl HybridKemPublicKey {
 }
 
 pub struct HybridKemSecretKey {
-    pub x25519_sk: [u8; 32],
+    pub x25519_sk: [u8; X25519_KEY_SIZE],
     pub kyber_sk: KyberSecretKey,
 }
 
@@ -58,24 +60,24 @@ pub struct HybridKemKeyPair {
 
 #[derive(Clone)]
 pub struct HybridKemCiphertext {
-    pub x25519_ephemeral_pk: [u8; 32],
+    pub x25519_ephemeral_pk: [u8; X25519_KEY_SIZE],
     pub kyber_ct: KyberCiphertext,
 }
 
 impl HybridKemCiphertext {
     pub fn to_bytes(&self) -> Vec<u8> {
-        let mut bytes = Vec::with_capacity(32 + self.kyber_ct.as_bytes().len());
+        let mut bytes = Vec::with_capacity(X25519_KEY_SIZE + self.kyber_ct.as_bytes().len());
         bytes.extend_from_slice(&self.x25519_ephemeral_pk);
         bytes.extend_from_slice(self.kyber_ct.as_bytes());
         bytes
     }
 
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
-        if bytes.len() < 32 {
+        if bytes.len() < X25519_KEY_SIZE {
             return Err("Byte slice too short for HybridKemCiphertext".to_string());
         }
-        let mut x25519_ephemeral_pk = [0u8; 32];
-        x25519_ephemeral_pk.copy_from_slice(&bytes[..32]);
+        let mut x25519_ephemeral_pk = [0u8; X25519_KEY_SIZE];
+        x25519_ephemeral_pk.copy_from_slice(&bytes[..X25519_KEY_SIZE]);
 
         let kyber_ct = KyberCiphertext::from_bytes(&bytes[32..])
             .map_err(|e| format!("Failed to parse Kyber ciphertext: {:?}", e))?;
