@@ -81,6 +81,22 @@ impl PacketFrame {
         })
     }
 
+    pub fn packet_type(&self) -> PacketType {
+        self.header.packet_type
+    }
+
+    pub fn seq(&self) -> u64 {
+        self.header.seq
+    }
+
+    pub fn payload_len(&self) -> usize {
+        self.payload.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.payload.is_empty()
+    }
+
     pub fn encode(&self) -> Vec<u8> {
         let mut buf = Vec::with_capacity(HEADER_SIZE + self.payload.len());
         buf.push(self.header.version);
@@ -197,6 +213,20 @@ mod tests {
 
         assert_eq!(frame, decoded);
     }
+
+    #[test]
+    fn test_packet_frame_accessors() {
+        let frame = PacketFrame::new(PacketType::Data, 77, vec![1, 2, 3, 4]).unwrap();
+        assert_eq!(frame.packet_type(), PacketType::Data);
+        assert_eq!(frame.seq(), 77);
+        assert_eq!(frame.payload_len(), 4);
+        assert!(!frame.is_empty());
+
+        let empty_frame = PacketFrame::new(PacketType::Ping, 88, vec![]).unwrap();
+        assert_eq!(empty_frame.payload_len(), 0);
+        assert!(empty_frame.is_empty());
+    }
+
 
     #[test]
     fn test_packet_frame_truncated() {
