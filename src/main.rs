@@ -1,12 +1,13 @@
 use clap::{Parser, Subcommand};
 use pqc_hybrid_gateway::crypto::{
     aead::AeadCipher,
-    kdf::derive_session_keys,
+    kdf::{derive_session_keys, hash_transcript},
     kem::{decapsulate_hybrid, encapsulate_hybrid, HybridKemKeyPair},
     sig::{sign_hybrid, verify_hybrid, HybridSigKeyPair},
 };
 use pqc_hybrid_gateway::protocol::AntiReplayFilter;
 use std::time::Instant;
+
 
 #[derive(Parser)]
 #[command(
@@ -75,7 +76,7 @@ fn main() {
 
             // 3. AEAD & Transcript Key Derivation
             print!("[TEST 3/5] AEAD Session Derivation & Tamper Resistance... ");
-            let transcript_hash = [0x42u8; 32];
+            let transcript_hash = hash_transcript(&[b"client-init-key-exchange", b"server-resp-key-exchange"]);
             let session_keys = derive_session_keys(&sender_shared_secret, &transcript_hash);
             let client_cipher = AeadCipher::new(&session_keys.client_write_key);
             let server_cipher = AeadCipher::new(&session_keys.client_write_key);

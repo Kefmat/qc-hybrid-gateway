@@ -2,7 +2,7 @@ pub mod crypto;
 pub mod protocol;
 
 pub use crypto::aead::AeadCipher;
-pub use crypto::kdf::SessionKeys;
+pub use crypto::kdf::{derive_hybrid_shared_secret, derive_session_keys, hash_transcript, SessionKeys};
 pub use crypto::kem::{HybridKemCiphertext, HybridKemKeyPair, HybridKemPublicKey, HybridKemSecretKey};
 pub use crypto::sig::{HybridSigKeyPair, HybridSigPublicKey, HybridSigSecretKey, HybridSignature};
 pub use protocol::{AntiReplayFilter, PacketFrame, PacketHeader, PacketType};
@@ -12,8 +12,6 @@ mod tests {
     use super::*;
     use crate::crypto::kem::{decapsulate_hybrid, encapsulate_hybrid};
     use crate::crypto::sig::{sign_hybrid, verify_hybrid};
-    use crate::crypto::kdf::derive_session_keys;
-
 
     #[test]
     fn test_hybrid_kem_exchange() {
@@ -36,8 +34,9 @@ mod tests {
     #[test]
     fn test_aead_framing_and_tampering() {
         let master_secret = [0x77u8; 32];
-        let transcript = [0x99u8; 32];
+        let transcript = hash_transcript(&[b"client-handshake-init", b"server-handshake-resp"]);
         let session = derive_session_keys(&master_secret, &transcript);
+
 
         let sender = AeadCipher::new(&session.client_write_key);
         let receiver = AeadCipher::new(&session.client_write_key);
