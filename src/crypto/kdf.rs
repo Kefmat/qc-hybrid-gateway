@@ -1,9 +1,17 @@
 use hkdf::Hkdf;
-use sha2::Sha256;
+use sha2::{Digest, Sha256};
 use zeroize::Zeroize;
 
 const KEM_SALT: &[u8] = b"PQC-HYBRID-GATEWAY-KEM-V1";
 const SESSION_SALT: &[u8] = b"PQC-HYBRID-GATEWAY-SESSION-V1";
+
+pub fn hash_transcript(messages: &[&[u8]]) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    for msg in messages {
+        hasher.update(msg);
+    }
+    hasher.finalize().into()
+}
 
 pub fn derive_hybrid_shared_secret(classical_ss: &[u8], pq_ss: &[u8]) -> [u8; 32] {
     let mut ikm = Vec::with_capacity(classical_ss.len() + pq_ss.len());
@@ -83,5 +91,19 @@ mod tests {
         assert_ne!(keys.client_write_key, keys_diff.client_write_key);
         assert_ne!(keys.server_write_key, keys_diff.server_write_key);
     }
+
+    #[test]
+    fn test_hash_transcript() {
+        let msg1 = b"handshake-client-hello";
+        let msg2 = b"handshake-server-hello";
+
+        let hash1 = hash_transcript(&[msg1, msg2]);
+        let hash2 = hash_transcript(&[msg1, msg2]);
+        assert_eq!(hash1, hash2);
+
+        let hash_diff = hash_transcript(&[msg1]);
+        assert_ne!(hash1, hash_diff);
+    }
 }
+
 
