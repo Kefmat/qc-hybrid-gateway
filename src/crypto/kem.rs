@@ -109,6 +109,8 @@ impl HybridKemKeyPair {
     }
 }
 
+/// Encapsulates a hybrid shared secret using peer's ML-KEM-768 and X25519 public keys.
+/// Returns the composite ciphertext and a 32-byte master shared secret derived via HKDF-SHA256.
 pub fn encapsulate_hybrid(
     peer_pk: &HybridKemPublicKey,
 ) -> (HybridKemCiphertext, [u8; 32]) {
@@ -130,6 +132,8 @@ pub fn encapsulate_hybrid(
     (ciphertext, hybrid_ss)
 }
 
+/// Decapsulates a composite ciphertext using the recipient's ML-KEM-768 and X25519 secret keys.
+/// Returns the matching 32-byte master shared secret.
 pub fn decapsulate_hybrid(
     ciphertext: &HybridKemCiphertext,
     sk: &HybridKemSecretKey,
@@ -142,6 +146,7 @@ pub fn decapsulate_hybrid(
 
     derive_hybrid_shared_secret(classical_ss.as_bytes(), kyber_ss.as_bytes())
 }
+
 
 #[cfg(test)]
 mod tests {

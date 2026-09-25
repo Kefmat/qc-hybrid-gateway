@@ -7,17 +7,20 @@ pub const KEY_SIZE: usize = 32;
 pub const NONCE_SIZE: usize = 12;
 pub const TAG_SIZE: usize = 16;
 
+/// Formats a 64-bit sequence counter into a 96-bit (12-byte) big-endian nonce.
 pub fn format_nonce(nonce_counter: u64) -> [u8; NONCE_SIZE] {
     let mut nonce_bytes = [0u8; NONCE_SIZE];
     nonce_bytes[4..12].copy_from_slice(&nonce_counter.to_be_bytes());
     nonce_bytes
 }
 
+/// ChaCha20-Poly1305 authenticated symmetric cipher engine.
 pub struct AeadCipher {
     cipher: ChaCha20Poly1305,
 }
 
 impl AeadCipher {
+    /// Creates a new cipher instance initialized with a 32-byte key.
     pub fn new(key_bytes: &[u8; KEY_SIZE]) -> Self {
         let key = Key::from_slice(key_bytes);
         Self {
@@ -25,6 +28,7 @@ impl AeadCipher {
         }
     }
 
+    /// Encrypts plaintext with associated data (AAD) using sequence counter based nonce.
     pub fn encrypt(&self, nonce_counter: u64, aad: &[u8], plaintext: &[u8]) -> Result<Vec<u8>, String> {
         let nonce_bytes = format_nonce(nonce_counter);
         let nonce = Nonce::from_slice(&nonce_bytes);
@@ -39,6 +43,7 @@ impl AeadCipher {
             .map_err(|e| format!("AEAD encryption error: {:?}", e))
     }
 
+    /// Decrypts ciphertext and verifies authentication tag with associated data (AAD).
     pub fn decrypt(&self, nonce_counter: u64, aad: &[u8], ciphertext: &[u8]) -> Result<Vec<u8>, String> {
         let nonce_bytes = format_nonce(nonce_counter);
         let nonce = Nonce::from_slice(&nonce_bytes);
@@ -53,6 +58,7 @@ impl AeadCipher {
             .map_err(|e| format!("AEAD decryption/auth tag error: {:?}", e))
     }
 }
+
 
 #[cfg(test)]
 mod tests {

@@ -114,6 +114,7 @@ impl HybridSigKeyPair {
     }
 }
 
+/// Generates a dual hybrid signature (Ed25519 + ML-DSA-65) over the provided message.
 pub fn sign_hybrid(message: &[u8], sk: &HybridSigSecretKey) -> HybridSignature {
     let ed_signing_key = Ed25519SigningKey::from_bytes(&sk.ed25519_sk);
     let ed_sig = ed_signing_key.sign(message);
@@ -126,6 +127,7 @@ pub fn sign_hybrid(message: &[u8], sk: &HybridSigSecretKey) -> HybridSignature {
     }
 }
 
+/// Verifies that both the Ed25519 and ML-DSA-65 signatures are valid for the given message.
 pub fn verify_hybrid(
     message: &[u8],
     signature: &HybridSignature,
@@ -142,6 +144,7 @@ pub fn verify_hybrid(
 
     verify_detached_signature(&signature.dilithium_sig, message, &pk.dilithium_pk).is_ok()
 }
+
 
 #[cfg(test)]
 mod tests {
