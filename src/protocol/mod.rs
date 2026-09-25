@@ -159,6 +159,11 @@ impl AntiReplayFilter {
         self.seen.len()
     }
 
+    pub fn reset(&mut self) {
+        self.highest_seq = 0;
+        self.seen.clear();
+    }
+
     pub fn check_and_update(&mut self, seq: u64) -> bool {
         if seq > self.highest_seq {
             let cutoff = seq.saturating_sub(self.window_size);
@@ -264,8 +269,15 @@ mod tests {
         filter.check_and_update(100);
         assert_eq!(filter.highest_seq(), 100);
         assert_eq!(filter.seen_count(), 1);
+
+        filter.reset();
+        assert_eq!(filter.highest_seq(), 0);
+        assert_eq!(filter.seen_count(), 0);
+        // Can re-accept sequences starting fresh
+        assert!(filter.check_and_update(100));
     }
 }
+
 
 
 
