@@ -1,17 +1,19 @@
 pub mod crypto;
 pub mod protocol;
 
-pub use crypto::kem::{HybridKemKeyPair, HybridKemPublicKey, HybridKemSecretKey, HybridKemCiphertext};
+pub use crypto::aead::AeadCipher;
+pub use crypto::kdf::SessionKeys;
+pub use crypto::kem::{HybridKemCiphertext, HybridKemKeyPair, HybridKemPublicKey, HybridKemSecretKey};
 pub use crypto::sig::{HybridSigKeyPair, HybridSigPublicKey, HybridSigSecretKey, HybridSignature};
+pub use protocol::{AntiReplayFilter, PacketFrame, PacketHeader, PacketType};
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::crypto::kem::{decapsulate_hybrid, encapsulate_hybrid};
     use crate::crypto::sig::{sign_hybrid, verify_hybrid};
-    use crate::crypto::aead::AeadCipher;
     use crate::crypto::kdf::derive_session_keys;
-    use crate::protocol::AntiReplayFilter;
+
 
     #[test]
     fn test_hybrid_kem_exchange() {
