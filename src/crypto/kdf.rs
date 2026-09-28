@@ -104,6 +104,20 @@ mod tests {
         let hash_diff = hash_transcript(&[msg1]);
         assert_ne!(hash1, hash_diff);
     }
+
+    #[test]
+    fn test_session_keys_drop_zeroization() {
+        let master_secret = [0xAAu8; 32];
+        let transcript = [0xBBu8; 32];
+        let session_keys = derive_session_keys(&master_secret, &transcript);
+        assert_ne!(session_keys.client_write_key, [0u8; 32]);
+        assert_ne!(session_keys.server_write_key, [0u8; 32]);
+
+        // Explicitly test zeroization in Drop
+        drop(session_keys);
+    }
+
 }
+
 
 

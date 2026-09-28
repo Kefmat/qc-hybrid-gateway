@@ -91,4 +91,22 @@ mod tests {
         let err = cipher.decrypt(10, b"wrong-aad", &encrypted);
         assert!(err.is_err());
     }
+
+    #[test]
+    fn test_ciphertext_truncation_fails_decryption() {
+        let key = [0x77u8; 32];
+        let cipher = AeadCipher::new(&key);
+        let encrypted = cipher.encrypt(5, b"aad", b"secret message payload").unwrap();
+
+        let truncated = &encrypted[..encrypted.len() - 1];
+        assert!(cipher.decrypt(5, b"aad", truncated).is_err());
+    }
+
+    #[test]
+    fn test_nonce_sequence_counters_distinct() {
+        let n1 = format_nonce(1);
+        let n2 = format_nonce(2);
+        assert_ne!(n1, n2);
+    }
 }
+
