@@ -47,6 +47,39 @@ pub struct PacketHeader {
     pub payload_len: u32,
 }
 
+impl PacketHeader {
+    pub fn encode(&self) -> [u8; HEADER_SIZE] {
+        let mut buf = [0u8; HEADER_SIZE];
+        buf[0] = self.version;
+        buf[1] = self.packet_type as u8;
+        buf[2..10].copy_from_slice(&self.seq.to_be_bytes());
+        buf[10..14].copy_from_slice(&self.payload_len.to_be_bytes());
+        buf
+    }
+
+    pub fn decode(bytes: &[u8]) -> Result<Self, String> {
+        if bytes.len() < HEADER_SIZE {
+            return Err("Header buffer too short".to_string());
+        }
+
+        let version = bytes[0];
+        if version != PROTOCOL_VERSION {
+            return Err(format!("Unsupported protocol version: {}", version));
+        }
+
+        let packet_type = PacketType::try_from(bytes[1])?;
+        let seq = u64::from_be_bytes(bytes[2..10].try_into().unwrap());
+        let payload_len = u32::from_be_bytes(bytes[10..14].try_into().unwrap());
+
+        Ok(Self {
+            version,
+            packet_type,
+            seq,
+            payload_len,
+        })
+    }
+}
+
 impl fmt::Display for PacketHeader {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
@@ -56,7 +89,6 @@ impl fmt::Display for PacketHeader {
         )
     }
 }
-
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PacketFrame {
@@ -99,27 +131,14 @@ impl PacketFrame {
 
     pub fn encode(&self) -> Vec<u8> {
         let mut buf = Vec::with_capacity(HEADER_SIZE + self.payload.len());
-        buf.push(self.header.version);
-        buf.push(self.header.packet_type as u8);
-        buf.extend_from_slice(&self.header.seq.to_be_bytes());
-        buf.extend_from_slice(&self.header.payload_len.to_be_bytes());
+        buf.extend_from_slice(&self.header.encode());
         buf.extend_from_slice(&self.payload);
         buf
     }
 
     pub fn decode(bytes: &[u8]) -> Result<Self, String> {
-        if bytes.len() < HEADER_SIZE {
-            return Err("Packet too short for header".to_string());
-        }
-
-        let version = bytes[0];
-        if version != PROTOCOL_VERSION {
-            return Err(format!("Unsupported protocol version: {}", version));
-        }
-
-        let packet_type = PacketType::try_from(bytes[1])?;
-        let seq = u64::from_be_bytes(bytes[2..10].try_into().unwrap());
-        let payload_len = u32::from_be_bytes(bytes[10..14].try_into().unwrap()) as usize;
+        let header = PacketHeader::decode(bytes)?;
+        let payload_len = header.payload_len as usize;
 
         if bytes.len() < HEADER_SIZE + payload_len {
             return Err("Packet payload truncated".to_string());
@@ -127,17 +146,10 @@ impl PacketFrame {
 
         let payload = bytes[HEADER_SIZE..HEADER_SIZE + payload_len].to_vec();
 
-        Ok(Self {
-            header: PacketHeader {
-                version,
-                packet_type,
-                seq,
-                payload_len: payload_len as u32,
-            },
-            payload,
-        })
+        Ok(Self { header, payload })
     }
 }
+
 
 pub const DEFAULT_REPLAY_WINDOW_SIZE: u64 = 64;
 
@@ -215,7 +227,28 @@ mod tests {
     }
 
     #[test]
+    fn test_packet_header_encode_decode() {
+        let header = PacketHeader {
+            version: PROTOCOL_VERSION,
+            packet_type: PacketType::HandshakeInit,
+            seq: 12345,
+            payload_len: 256,
+        };
+        let encoded = header.encode();
+        assert_eq!(encoded.len(), HEADER_SIZE);
+
+        let decoded = PacketHeader::decode(&encoded).expect("failed to decode header");
+        assert_eq!(header, decoded);
+
+        // Test decode failure on invalid version
+        let mut bad_version = encoded;
+        bad_version[0] = 99;
+        assert!(PacketHeader::decode(&bad_version).is_err());
+    }
+
+    #[test]
     fn test_packet_frame_accessors() {
+
         let frame = PacketFrame::new(PacketType::Data, 77, vec![1, 2, 3, 4]).unwrap();
         assert_eq!(frame.packet_type(), PacketType::Data);
         assert_eq!(frame.seq(), 77);
