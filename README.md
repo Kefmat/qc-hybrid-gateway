@@ -21,9 +21,47 @@ The gateway combines NIST-standardized Post-Quantum Cryptography (PQC) algorithm
 ### 3. Symmetric Transport & Framing
 * **Cipher**: **ChaCha20-Poly1305 AEAD** (RFC 8439)
 * **Session Derivation**: Separate client-to-server and server-to-client unidirectional write keys derived from the master secret bound to the handshake transcript hash.
-* **Wire Protocol Framing**: Versioned binary framing (`PacketFrame`, `PacketType`) with sequence indexing and payload bounds.
+* **Wire Protocol Framing**: Versioned binary framing (`PacketHeader`, `PacketFrame`, `PacketType`) with sequence indexing and payload bounds.
 * **Anti-Replay Defense**: Sliding-window bitmask filter detecting replayed and out-of-order packets.
 * **Memory Safety**: Automatic secret key zeroization on drop (`zeroize`).
+
+---
+
+## Cryptographic Parameters Summary
+
+| Component | Classical Primitive | Post-Quantum Primitive | Combined Public Key | Ciphertext / Signature |
+|:---|:---|:---|:---|:---|
+| **Key Encapsulation** | X25519 (32 B) | ML-KEM-768 (1184 B) | 1216 bytes | 1120 bytes |
+| **Digital Signatures** | Ed25519 (32 B) | ML-DSA-65 (1952 B) | 1984 bytes | 3357 bytes |
+| **Symmetric AEAD** | ChaCha20-Poly1305 (32 B key, 12 B nonce, 16 B tag) | N/A (Quantum-resistant 256-bit key) | N/A | Variable + 16 B tag |
+
+---
+
+## Wire Protocol Frame Format
+
+All network communication uses a fixed 14-byte binary header followed by the variable-length payload:
+
+```text
+ 0                   1                   2                   3
+ 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|    Version    |  Packet Type  |                               |
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+                               +
+|                    Sequence Number (64 bits)                  |
++                               +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|                               |       Payload Length (32 bits)|
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|                        Payload Data...                        |
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+```
+
+| Field | Offset | Length | Type | Description |
+|:---|:---|:---|:---|:---|
+| `version` | 0 | 1 byte | `u8` | Protocol version (`0x01`) |
+| `packet_type` | 1 | 1 byte | `u8` | `0x01` (HandshakeInit), `0x02` (HandshakeResp), `0x03` (Data), `0x04` (Ping) |
+| `seq` | 2..10 | 8 bytes | `u64` (big-endian) | Monotonically increasing sequence counter |
+| `payload_len` | 10..14 | 4 bytes | `u32` (big-endian) | Payload length in bytes (max 65536 bytes) |
+| `payload` | 14.. | Variable | `[u8]` | Encrypted ciphertext or raw handshake payload |
 
 ---
 
@@ -44,7 +82,7 @@ pqc-hybrid-gateway/
     │   ├── aead.rs         # ChaCha20-Poly1305 Authenticated Encryption
     │   └── kdf.rs          # HKDF-SHA256 Transcript Binding & Session Derivation
     └── protocol/
-        └── mod.rs          # Wire framing (PacketFrame) and sliding-window anti-replay filter
+        └── mod.rs          # Wire framing (PacketHeader, PacketFrame) and anti-replay filter
 ```
 
 ---
@@ -85,4 +123,5 @@ cargo run --release -- bench
 - **Zeroization**: All private keys (`HybridKemSecretKey`, `HybridSigSecretKey`, `SessionKeys`) automatically zeroize underlying memory on drop.
 - **Transcript Binding**: All derived session keys are strictly bound to ephemeral exchange transcripts via HKDF-SHA256.
 - **Anti-Replay Window**: Uses configurable sliding-window bitmask verification (default window: 64 packets) to prevent packet replay attacks.
+
 
