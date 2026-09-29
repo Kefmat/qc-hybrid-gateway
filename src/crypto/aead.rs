@@ -20,6 +20,21 @@ pub struct AeadCipher {
 }
 
 impl AeadCipher {
+    /// Returns the cipher key size in bytes (32).
+    pub const fn key_size() -> usize {
+        KEY_SIZE
+    }
+
+    /// Returns the AEAD authentication tag size in bytes (16).
+    pub const fn tag_size() -> usize {
+        TAG_SIZE
+    }
+
+    /// Returns the nonce size in bytes (12).
+    pub const fn nonce_size() -> usize {
+        NONCE_SIZE
+    }
+
     /// Creates a new cipher instance initialized with a 32-byte key.
     pub fn new(key_bytes: &[u8; KEY_SIZE]) -> Self {
         let key = Key::from_slice(key_bytes);
@@ -27,6 +42,7 @@ impl AeadCipher {
             cipher: ChaCha20Poly1305::new(key),
         }
     }
+
 
     /// Encrypts plaintext with associated data (AAD) using sequence counter based nonce.
     pub fn encrypt(&self, nonce_counter: u64, aad: &[u8], plaintext: &[u8]) -> Result<Vec<u8>, String> {
@@ -108,5 +124,13 @@ mod tests {
         let n2 = format_nonce(2);
         assert_ne!(n1, n2);
     }
+
+    #[test]
+    fn test_aead_cipher_size_constants() {
+        assert_eq!(AeadCipher::key_size(), 32);
+        assert_eq!(AeadCipher::tag_size(), 16);
+        assert_eq!(AeadCipher::nonce_size(), 12);
+    }
 }
+
 
