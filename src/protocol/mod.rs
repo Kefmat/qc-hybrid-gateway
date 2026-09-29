@@ -48,6 +48,22 @@ pub struct PacketHeader {
 }
 
 impl PacketHeader {
+    pub fn new(packet_type: PacketType, seq: u64, payload_len: u32) -> Result<Self, String> {
+        if payload_len as usize > MAX_FRAME_SIZE {
+            return Err(format!(
+                "Payload length {} exceeds maximum frame size {}",
+                payload_len, MAX_FRAME_SIZE
+            ));
+        }
+
+        Ok(Self {
+            version: PROTOCOL_VERSION,
+            packet_type,
+            seq,
+            payload_len,
+        })
+    }
+
     pub fn encode(&self) -> [u8; HEADER_SIZE] {
         let mut buf = [0u8; HEADER_SIZE];
         buf[0] = self.version;
@@ -70,6 +86,13 @@ impl PacketHeader {
         let packet_type = PacketType::try_from(bytes[1])?;
         let seq = u64::from_be_bytes(bytes[2..10].try_into().unwrap());
         let payload_len = u32::from_be_bytes(bytes[10..14].try_into().unwrap());
+
+        if payload_len as usize > MAX_FRAME_SIZE {
+            return Err(format!(
+                "Decoded payload length {} exceeds maximum frame size {}",
+                payload_len, MAX_FRAME_SIZE
+            ));
+        }
 
         Ok(Self {
             version,
@@ -98,20 +121,10 @@ pub struct PacketFrame {
 
 impl PacketFrame {
     pub fn new(packet_type: PacketType, seq: u64, payload: Vec<u8>) -> Result<Self, String> {
-        if payload.len() > MAX_FRAME_SIZE {
-            return Err(format!("Payload exceeds maximum frame size: {}", MAX_FRAME_SIZE));
-        }
-
-        Ok(Self {
-            header: PacketHeader {
-                version: PROTOCOL_VERSION,
-                packet_type,
-                seq,
-                payload_len: payload.len() as u32,
-            },
-            payload,
-        })
+        let header = PacketHeader::new(packet_type, seq, payload.len() as u32)?;
+        Ok(Self { header, payload })
     }
+
 
     pub fn packet_type(&self) -> PacketType {
         self.header.packet_type
@@ -247,7 +260,17 @@ mod tests {
     }
 
     #[test]
+    fn test_packet_header_new_and_size_validation() {
+        let valid_header = PacketHeader::new(PacketType::Data, 1, 1024);
+        assert!(valid_header.is_ok());
+
+        let oversized_header = PacketHeader::new(PacketType::Data, 1, (MAX_FRAME_SIZE + 1) as u32);
+        assert!(oversized_header.is_err());
+    }
+
+    #[test]
     fn test_packet_frame_accessors() {
+
 
         let frame = PacketFrame::new(PacketType::Data, 77, vec![1, 2, 3, 4]).unwrap();
         assert_eq!(frame.packet_type(), PacketType::Data);
