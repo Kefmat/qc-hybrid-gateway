@@ -17,6 +17,23 @@ pub struct HybridKemPublicKey {
     pub kyber_pk: KyberPublicKey,
 }
 
+impl PartialEq for HybridKemPublicKey {
+    fn eq(&self, other: &Self) -> bool {
+        self.x25519_pk == other.x25519_pk && self.kyber_pk.as_bytes() == other.kyber_pk.as_bytes()
+    }
+}
+
+impl Eq for HybridKemPublicKey {}
+
+impl std::fmt::Debug for HybridKemPublicKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("HybridKemPublicKey")
+            .field("x25519_pk", &self.x25519_pk)
+            .field("kyber_pk_len", &self.kyber_pk.as_bytes().len())
+            .finish()
+    }
+}
+
 impl HybridKemPublicKey {
     pub fn to_bytes(&self) -> Vec<u8> {
         let mut bytes = Vec::with_capacity(X25519_KEY_SIZE + self.kyber_pk.as_bytes().len());
@@ -63,6 +80,27 @@ pub struct HybridKemCiphertext {
     pub x25519_ephemeral_pk: [u8; X25519_KEY_SIZE],
     pub kyber_ct: KyberCiphertext,
 }
+
+impl PartialEq for HybridKemCiphertext {
+    fn eq(&self, other: &Self) -> bool {
+        self.x25519_ephemeral_pk == other.x25519_ephemeral_pk
+            && self.kyber_ct.as_bytes() == other.kyber_ct.as_bytes()
+    }
+}
+
+impl Eq for HybridKemCiphertext {}
+
+impl std::fmt::Debug for HybridKemCiphertext {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("HybridKemCiphertext")
+            .field("x25519_ephemeral_pk", &self.x25519_ephemeral_pk)
+            .field("kyber_ct_len", &self.kyber_ct.as_bytes().len())
+            .finish()
+    }
+}
+
+
+
 
 impl HybridKemCiphertext {
     pub fn to_bytes(&self) -> Vec<u8> {
@@ -158,8 +196,7 @@ mod tests {
         let bytes = pair.public_key.to_bytes();
         let decoded = HybridKemPublicKey::from_bytes(&bytes).expect("deserialization failed");
 
-        assert_eq!(pair.public_key.x25519_pk, decoded.x25519_pk);
-        assert_eq!(pair.public_key.kyber_pk.as_bytes(), decoded.kyber_pk.as_bytes());
+        assert_eq!(pair.public_key, decoded);
     }
 
     #[test]
@@ -169,7 +206,7 @@ mod tests {
         let bytes = ct.to_bytes();
         let decoded = HybridKemCiphertext::from_bytes(&bytes).expect("deserialization failed");
 
-        assert_eq!(ct.x25519_ephemeral_pk, decoded.x25519_ephemeral_pk);
-        assert_eq!(ct.kyber_ct.as_bytes(), decoded.kyber_ct.as_bytes());
+        assert_eq!(ct, decoded);
     }
 }
+

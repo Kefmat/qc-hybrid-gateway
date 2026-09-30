@@ -19,6 +19,23 @@ pub struct HybridSigPublicKey {
     pub dilithium_pk: DilithiumPublicKey,
 }
 
+impl PartialEq for HybridSigPublicKey {
+    fn eq(&self, other: &Self) -> bool {
+        self.ed25519_pk == other.ed25519_pk && self.dilithium_pk.as_bytes() == other.dilithium_pk.as_bytes()
+    }
+}
+
+impl Eq for HybridSigPublicKey {}
+
+impl std::fmt::Debug for HybridSigPublicKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("HybridSigPublicKey")
+            .field("ed25519_pk", &self.ed25519_pk)
+            .field("dilithium_pk_len", &self.dilithium_pk.as_bytes().len())
+            .finish()
+    }
+}
+
 impl HybridSigPublicKey {
     pub fn to_bytes(&self) -> Vec<u8> {
         let mut bytes = Vec::with_capacity(ED25519_PUBLIC_KEY_SIZE + self.dilithium_pk.as_bytes().len());
@@ -65,6 +82,27 @@ pub struct HybridSignature {
     pub ed25519_sig: [u8; ED25519_SIGNATURE_SIZE],
     pub dilithium_sig: DilithiumSignature,
 }
+
+impl PartialEq for HybridSignature {
+    fn eq(&self, other: &Self) -> bool {
+        self.ed25519_sig == other.ed25519_sig
+            && self.dilithium_sig.as_bytes() == other.dilithium_sig.as_bytes()
+    }
+}
+
+impl Eq for HybridSignature {}
+
+impl std::fmt::Debug for HybridSignature {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("HybridSignature")
+            .field("ed25519_sig_len", &self.ed25519_sig.len())
+            .field("dilithium_sig_len", &self.dilithium_sig.as_bytes().len())
+            .finish()
+    }
+}
+
+
+
 
 impl HybridSignature {
     pub fn to_bytes(&self) -> Vec<u8> {
@@ -156,8 +194,7 @@ mod tests {
         let bytes = pair.public_key.to_bytes();
         let decoded = HybridSigPublicKey::from_bytes(&bytes).expect("deserialization failed");
 
-        assert_eq!(pair.public_key.ed25519_pk, decoded.ed25519_pk);
-        assert_eq!(pair.public_key.dilithium_pk.as_bytes(), decoded.dilithium_pk.as_bytes());
+        assert_eq!(pair.public_key, decoded);
     }
 
     #[test]
@@ -168,6 +205,8 @@ mod tests {
         let bytes = signature.to_bytes();
         let decoded_sig = HybridSignature::from_bytes(&bytes).expect("signature decode failed");
 
+        assert_eq!(signature, decoded_sig);
         assert!(verify_hybrid(msg, &decoded_sig, &pair.public_key));
     }
 }
+
