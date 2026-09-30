@@ -57,6 +57,13 @@ impl AeadCipher {
         Ok(Self::new(&key))
     }
 
+    /// Re-keys the cipher instance with a new 32-byte key.
+    pub fn rekey(&mut self, new_key_bytes: &[u8; KEY_SIZE]) {
+        let key = Key::from_slice(new_key_bytes);
+        self.cipher = ChaCha20Poly1305::new(key);
+    }
+
+
 
 
     /// Encrypts plaintext with associated data (AAD) using sequence counter based nonce.
@@ -157,7 +164,27 @@ mod tests {
         let bad_cipher = AeadCipher::from_slice(&bad_key);
         assert!(bad_cipher.is_err());
     }
+
+    #[test]
+    fn test_aead_cipher_rekey() {
+        let key1 = [0x11u8; 32];
+        let key2 = [0x22u8; 32];
+        let mut cipher = AeadCipher::new(&key1);
+
+        let plaintext = b"rekey-test-payload";
+        let aad = b"rekey-aad";
+        let ct1 = cipher.encrypt(1, aad, plaintext).unwrap();
+
+        // After rekeying, cipher should decrypt with key2 and fail to decrypt with key1 ciphertext
+        cipher.rekey(&key2);
+        assert!(cipher.decrypt(1, aad, &ct1).is_err());
+
+        let ct2 = cipher.encrypt(1, aad, plaintext).unwrap();
+        let decrypted = cipher.decrypt(1, aad, &ct2).unwrap();
+        assert_eq!(plaintext.to_vec(), decrypted);
+    }
 }
+
 
 
 
