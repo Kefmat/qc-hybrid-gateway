@@ -208,5 +208,13 @@ mod tests {
 
         assert_eq!(ct, decoded);
     }
+
+    #[test]
+    fn test_deserialization_truncated_inputs() {
+        let short_bytes = [0u8; 16];
+        assert!(HybridKemPublicKey::from_bytes(&short_bytes).is_err());
+        assert!(HybridKemCiphertext::from_bytes(&short_bytes).is_err());
+    }
 }
+
 

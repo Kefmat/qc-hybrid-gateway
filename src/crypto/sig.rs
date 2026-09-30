@@ -208,5 +208,15 @@ mod tests {
         assert_eq!(signature, decoded_sig);
         assert!(verify_hybrid(msg, &decoded_sig, &pair.public_key));
     }
+
+    #[test]
+    fn test_deserialization_truncated_inputs() {
+        let short_pk_bytes = [0u8; 16];
+        assert!(HybridSigPublicKey::from_bytes(&short_pk_bytes).is_err());
+
+        let short_sig_bytes = [0u8; 32];
+        assert!(HybridSignature::from_bytes(&short_sig_bytes).is_err());
+    }
 }
+
 
