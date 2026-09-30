@@ -43,6 +43,21 @@ impl AeadCipher {
         }
     }
 
+    /// Creates a new cipher instance from a byte slice, validating that its length matches KEY_SIZE.
+    pub fn from_slice(key_bytes: &[u8]) -> Result<Self, String> {
+        if key_bytes.len() != KEY_SIZE {
+            return Err(format!(
+                "Invalid AEAD key length: expected {} bytes, got {}",
+                KEY_SIZE,
+                key_bytes.len()
+            ));
+        }
+        let mut key = [0u8; KEY_SIZE];
+        key.copy_from_slice(key_bytes);
+        Ok(Self::new(&key))
+    }
+
+
 
     /// Encrypts plaintext with associated data (AAD) using sequence counter based nonce.
     pub fn encrypt(&self, nonce_counter: u64, aad: &[u8], plaintext: &[u8]) -> Result<Vec<u8>, String> {
@@ -131,6 +146,18 @@ mod tests {
         assert_eq!(AeadCipher::tag_size(), 16);
         assert_eq!(AeadCipher::nonce_size(), 12);
     }
+
+    #[test]
+    fn test_aead_cipher_from_slice() {
+        let key_bytes = [0x55u8; 32];
+        let cipher = AeadCipher::from_slice(&key_bytes);
+        assert!(cipher.is_ok());
+
+        let bad_key = [0x55u8; 16];
+        let bad_cipher = AeadCipher::from_slice(&bad_key);
+        assert!(bad_cipher.is_err());
+    }
 }
+
 
 
