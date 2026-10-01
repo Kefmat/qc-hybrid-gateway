@@ -1,6 +1,9 @@
 use std::collections::HashSet;
 use std::fmt;
 
+pub mod handshake;
+pub use handshake::{HandshakeInit, HandshakeResponse, HANDSHAKE_NONCE_SIZE};
+
 pub const PROTOCOL_VERSION: u8 = 1;
 pub const MAX_FRAME_SIZE: usize = 65536;
 pub const HEADER_SIZE: usize = 14; // version (1) + type (1) + seq (8) + payload_len (4)
