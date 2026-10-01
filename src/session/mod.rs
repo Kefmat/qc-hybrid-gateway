@@ -1,7 +1,7 @@
 use std::fmt;
 
 use crate::crypto::{aead::AeadCipher, kdf::SessionKeys};
-use crate::protocol::{AntiReplayFilter, DEFAULT_REPLAY_WINDOW_SIZE};
+use crate::protocol::{AntiReplayFilter, PacketFrame, PacketType, DEFAULT_REPLAY_WINDOW_SIZE};
 
 pub const DEFAULT_REKEY_PACKET_THRESHOLD: u64 = 1_000_000;
 
@@ -122,6 +122,38 @@ impl Session {
 
         Ok(())
     }
+    pub fn encrypt_packet(&mut self, packet_type: PacketType, plaintext: &[u8]) -> Result<PacketFrame, String> {
+        if self.state != SessionState::Established {
+            return Err(format!("Cannot encrypt packet in state: {}", self.state));
+        }
+
+        let cipher = self.tx_cipher.as_ref().ok_or("TX cipher uninitialized")?;
+        self.tx_seq += 1;
+        let seq = self.tx_seq;
+
+        let aad = format!("seq={}", seq);
+        let ciphertext = cipher.encrypt(seq, aad.as_bytes(), plaintext)?;
+
+        PacketFrame::new(packet_type, seq, ciphertext)
+    }
+
+    pub fn decrypt_packet(&mut self, frame: &PacketFrame) -> Result<Vec<u8>, String> {
+        if self.state != SessionState::Established {
+            return Err(format!("Cannot decrypt packet in state: {}", self.state));
+        }
+
+        let cipher = self.rx_cipher.as_ref().ok_or("RX cipher uninitialized")?;
+
+        if !self.rx_filter.check_and_update(frame.seq()) {
+            return Err(format!(
+                "Anti-replay check failed for sequence number {}",
+                frame.seq()
+            ));
+        }
+
+        let aad = format!("seq={}", frame.seq());
+        cipher.decrypt(frame.seq(), aad.as_bytes(), &frame.payload)
+    }
 }
 
 #[cfg(test)]
@@ -166,5 +198,58 @@ mod tests {
 
         assert!(client.is_established());
         assert!(server.is_established());
+    }
+
+    #[test]
+    fn test_session_encrypt_decrypt_bidirectional() {
+        let mut client = Session::new_client();
+        let mut server = Session::new_server();
+
+        let keys = SessionKeys::new([11u8; 32], [22u8; 32]);
+        client.establish(&keys).unwrap();
+        server.establish(&keys).unwrap();
+
+        // Client -> Server
+        let client_msg = b"client-payload-123";
+        let frame = client.encrypt_packet(PacketType::Data, client_msg).unwrap();
+        assert_eq!(frame.seq(), 1);
+
+        let decrypted = server.decrypt_packet(&frame).unwrap();
+        assert_eq!(client_msg.to_vec(), decrypted);
+
+        // Server -> Client
+        let server_msg = b"server-payload-response";
+        let resp_frame = server.encrypt_packet(PacketType::Data, server_msg).unwrap();
+        assert_eq!(resp_frame.seq(), 1);
+
+        let decrypted_resp = client.decrypt_packet(&resp_frame).unwrap();
+        assert_eq!(server_msg.to_vec(), decrypted_resp);
+    }
+
+    #[test]
+    fn test_session_replay_rejection() {
+        let mut client = Session::new_client();
+        let mut server = Session::new_server();
+
+        let keys = SessionKeys::new([33u8; 32], [44u8; 32]);
+        client.establish(&keys).unwrap();
+        server.establish(&keys).unwrap();
+
+        let frame = client.encrypt_packet(PacketType::Data, b"data").unwrap();
+        assert!(server.decrypt_packet(&frame).is_ok());
+
+        // Replay same frame fails anti-replay check
+        assert!(server.decrypt_packet(&frame).is_err());
+    }
+
+    #[test]
+    fn test_session_unestablished_operations_fail() {
+        let mut client = Session::new_client();
+        let err = client.encrypt_packet(PacketType::Data, b"test");
+        assert!(err.is_err());
+
+        let frame = PacketFrame::new(PacketType::Data, 1, vec![1, 2, 3]).unwrap();
+        let err_dec = client.decrypt_packet(&frame);
+        assert!(err_dec.is_err());
     }
 }
