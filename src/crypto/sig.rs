@@ -45,12 +45,17 @@ impl HybridSigPublicKey {
         &self.dilithium_pk
     }
 
+    pub fn encoded_len(&self) -> usize {
+        ED25519_PUBLIC_KEY_SIZE + self.dilithium_pk.as_bytes().len()
+    }
+
     pub fn to_bytes(&self) -> Vec<u8> {
-        let mut bytes = Vec::with_capacity(ED25519_PUBLIC_KEY_SIZE + self.dilithium_pk.as_bytes().len());
+        let mut bytes = Vec::with_capacity(self.encoded_len());
         bytes.extend_from_slice(&self.ed25519_pk);
         bytes.extend_from_slice(self.dilithium_pk.as_bytes());
         bytes
     }
+
 
 
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
@@ -114,12 +119,17 @@ impl std::fmt::Debug for HybridSignature {
 
 
 impl HybridSignature {
+    pub fn encoded_len(&self) -> usize {
+        ED25519_SIGNATURE_SIZE + self.dilithium_sig.as_bytes().len()
+    }
+
     pub fn to_bytes(&self) -> Vec<u8> {
-        let mut bytes = Vec::with_capacity(ED25519_SIGNATURE_SIZE + self.dilithium_sig.as_bytes().len());
+        let mut bytes = Vec::with_capacity(self.encoded_len());
         bytes.extend_from_slice(&self.ed25519_sig);
         bytes.extend_from_slice(self.dilithium_sig.as_bytes());
         bytes
     }
+
 
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
         if bytes.len() < ED25519_SIGNATURE_SIZE {
@@ -233,7 +243,17 @@ mod tests {
         assert_eq!(pair.public_key.ed25519_pk(), &pair.public_key.ed25519_pk);
         assert_eq!(pair.public_key.dilithium_pk().as_bytes(), pair.public_key.dilithium_pk.as_bytes());
     }
+
+    #[test]
+    fn test_sig_encoded_lengths() {
+        let pair = HybridSigKeyPair::generate();
+        assert_eq!(pair.public_key.encoded_len(), pair.public_key.to_bytes().len());
+
+        let sig = sign_hybrid(b"message", &pair.secret_key);
+        assert_eq!(sig.encoded_len(), sig.to_bytes().len());
+    }
 }
+
 
 
 

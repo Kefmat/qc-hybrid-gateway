@@ -43,12 +43,17 @@ impl HybridKemPublicKey {
         &self.kyber_pk
     }
 
+    pub fn encoded_len(&self) -> usize {
+        X25519_KEY_SIZE + self.kyber_pk.as_bytes().len()
+    }
+
     pub fn to_bytes(&self) -> Vec<u8> {
-        let mut bytes = Vec::with_capacity(X25519_KEY_SIZE + self.kyber_pk.as_bytes().len());
+        let mut bytes = Vec::with_capacity(self.encoded_len());
         bytes.extend_from_slice(&self.x25519_pk);
         bytes.extend_from_slice(self.kyber_pk.as_bytes());
         bytes
     }
+
 
 
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
@@ -112,12 +117,17 @@ impl std::fmt::Debug for HybridKemCiphertext {
 
 
 impl HybridKemCiphertext {
+    pub fn encoded_len(&self) -> usize {
+        X25519_KEY_SIZE + self.kyber_ct.as_bytes().len()
+    }
+
     pub fn to_bytes(&self) -> Vec<u8> {
-        let mut bytes = Vec::with_capacity(X25519_KEY_SIZE + self.kyber_ct.as_bytes().len());
+        let mut bytes = Vec::with_capacity(self.encoded_len());
         bytes.extend_from_slice(&self.x25519_ephemeral_pk);
         bytes.extend_from_slice(self.kyber_ct.as_bytes());
         bytes
     }
+
 
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
         if bytes.len() < X25519_KEY_SIZE {
@@ -231,7 +241,17 @@ mod tests {
         assert_eq!(pair.public_key.x25519_pk(), &pair.public_key.x25519_pk);
         assert_eq!(pair.public_key.kyber_pk().as_bytes(), pair.public_key.kyber_pk.as_bytes());
     }
+
+    #[test]
+    fn test_kem_encoded_lengths() {
+        let pair = HybridKemKeyPair::generate();
+        assert_eq!(pair.public_key.encoded_len(), pair.public_key.to_bytes().len());
+
+        let (ct, _) = encapsulate_hybrid(&pair.public_key);
+        assert_eq!(ct.encoded_len(), ct.to_bytes().len());
+    }
 }
+
 
 
 
