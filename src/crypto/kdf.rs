@@ -32,12 +32,23 @@ pub struct SessionKeys {
     pub server_write_key: [u8; 32],
 }
 
+impl SessionKeys {
+    pub fn client_write_key(&self) -> &[u8; 32] {
+        &self.client_write_key
+    }
+
+    pub fn server_write_key(&self) -> &[u8; 32] {
+        &self.server_write_key
+    }
+}
+
 impl Drop for SessionKeys {
     fn drop(&mut self) {
         self.client_write_key.zeroize();
         self.server_write_key.zeroize();
     }
 }
+
 
 pub fn derive_session_keys(master_shared_secret: &[u8; 32], transcript_hash: &[u8; 32]) -> SessionKeys {
     let hk = Hkdf::<Sha256>::new(Some(SESSION_SALT), master_shared_secret);
@@ -117,7 +128,16 @@ mod tests {
         drop(session_keys);
     }
 
+    #[test]
+    fn test_session_keys_accessors() {
+        let master_secret = [0x11u8; 32];
+        let transcript = [0x22u8; 32];
+        let session_keys = derive_session_keys(&master_secret, &transcript);
+        assert_eq!(session_keys.client_write_key(), &session_keys.client_write_key);
+        assert_eq!(session_keys.server_write_key(), &session_keys.server_write_key);
+    }
 }
+
 
 
 
