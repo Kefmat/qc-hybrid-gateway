@@ -118,10 +118,21 @@ cargo run --release -- bench
 
 ---
 
+## Protocol Handshake & Transport Lifecycle
+
+1. **Client Initiation**: The client encapsulates a hybrid shared secret using the server's public key (`ML-KEM-768` + `X25519`) and sends a `HandshakeInit` frame.
+2. **Server Authentication**: The server decapsulates the shared secret, signs the client handshake payload with its composite identity key (`ML-DSA-65` + `Ed25519`), and returns a `HandshakeResp` frame.
+3. **Transcript Hash & Key Derivation**: Both peers compute `SHA-256` over the handshake transcript and derive unidirectional AEAD session write keys via `HKDF-SHA256`.
+4. **Encrypted Transport**: Application data is packaged into `Data` frames, encrypted using `ChaCha20-Poly1305` with sequential nonce counters and validated against sliding-window anti-replay filters.
+
+---
+
 ## Security & Implementation Notes
 
 - **Zeroization**: All private keys (`HybridKemSecretKey`, `HybridSigSecretKey`, `SessionKeys`) automatically zeroize underlying memory on drop.
 - **Transcript Binding**: All derived session keys are strictly bound to ephemeral exchange transcripts via HKDF-SHA256.
 - **Anti-Replay Window**: Uses configurable sliding-window bitmask verification (default window: 64 packets) to prevent packet replay attacks.
+- **Memory Safety & Invariants**: All frame lengths and header fields are strictly bounded by `MAX_FRAME_SIZE` (64 KB) with checked constructors.
+
 
 
