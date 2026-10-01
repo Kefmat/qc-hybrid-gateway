@@ -113,5 +113,89 @@ mod tests {
         let decrypted = server_rx_cipher.decrypt(decoded_frame.seq(), b"seq=1", &decoded_frame.payload).unwrap();
         assert_eq!(plaintext.to_vec(), decrypted);
     }
+
+    #[test]
+    fn test_full_session_tunnel_with_streaming_codec_and_rekey() {
+        // Setup identities
+        let client_sig = HybridSigKeyPair::generate();
+        let server_sig = HybridSigKeyPair::generate();
+
+        // 1. Client initiates HandshakeInit
+        let client_ephemeral_kem = HybridKemKeyPair::generate();
+        let client_nonce = [1u8; 16];
+        let init_msg = HandshakeInit::create(client_ephemeral_kem.public_key, client_nonce, &client_sig.secret_key);
+        assert!(init_msg.verify(&client_sig.public_key));
+
+        // 2. Server encapsulates against client's ephemeral KEM key
+        let (kem_ct, server_shared_secret) = encapsulate_hybrid(&init_msg.ephemeral_pk);
+        let server_nonce = [2u8; 16];
+        let resp_msg = HandshakeResponse::create(kem_ct.clone(), server_nonce, &server_sig.secret_key);
+        assert!(resp_msg.verify(&server_sig.public_key));
+
+        // 3. Client decapsulates
+        let client_shared_secret = decapsulate_hybrid(&resp_msg.ciphertext, &client_ephemeral_kem.secret_key);
+        assert_eq!(client_shared_secret, server_shared_secret);
+
+        // 4. Derive initial session keys
+        let transcript = hash_transcript(&[&init_msg.to_bytes(), &resp_msg.to_bytes()]);
+        let client_keys = derive_session_keys(&client_shared_secret, &transcript);
+        let server_keys = derive_session_keys(&server_shared_secret, &transcript);
+
+        // 5. Establish Sessions
+        let mut client_session = Session::new_client();
+        let mut server_session = Session::new_server();
+        client_session.establish(&client_keys).unwrap();
+        server_session.establish(&server_keys).unwrap();
+
+        // 6. Streaming traffic with FrameDecoder
+        let mut server_decoder = FrameDecoder::new();
+        let mut client_decoder = FrameDecoder::new();
+
+        let packet1 = client_session.encrypt_packet(PacketType::Data, b"message-one").unwrap();
+        let packet2 = client_session.encrypt_packet(PacketType::Ping, b"ping").unwrap();
+
+        let mut stream_bytes = packet1.encode();
+        stream_bytes.extend_from_slice(&packet2.encode());
+
+        server_decoder.feed(&stream_bytes);
+        let rx_frame1 = server_decoder.decode_frame().unwrap().unwrap();
+        let rx_frame2 = server_decoder.decode_frame().unwrap().unwrap();
+
+        let pt1 = server_session.decrypt_packet(&rx_frame1).unwrap();
+        let pt2 = server_session.decrypt_packet(&rx_frame2).unwrap();
+        assert_eq!(pt1, b"message-one");
+        assert_eq!(pt2, b"ping");
+
+        // 7. Server responds to client
+        let server_resp = server_session.encrypt_packet(PacketType::Data, b"response-ack").unwrap();
+        client_decoder.feed(&server_resp.encode());
+        let rx_resp = client_decoder.decode_frame().unwrap().unwrap();
+        let pt_resp = client_session.decrypt_packet(&rx_resp).unwrap();
+        assert_eq!(pt_resp, b"response-ack");
+
+        // 8. Rekeying transition
+        client_session.trigger_rekey().unwrap();
+        server_session.trigger_rekey().unwrap();
+
+        let new_transcript = hash_transcript(&[&transcript, b"rekey-rotation"]);
+        let new_client_keys = derive_session_keys(&client_shared_secret, &new_transcript);
+        let new_server_keys = derive_session_keys(&server_shared_secret, &new_transcript);
+
+        client_session.complete_rekey(&new_client_keys).unwrap();
+        server_session.complete_rekey(&new_server_keys).unwrap();
+
+        let post_rekey_pkt = client_session.encrypt_packet(PacketType::Data, b"post-rekey-data").unwrap();
+        server_decoder.feed(&post_rekey_pkt.encode());
+        let rx_post_rekey = server_decoder.decode_frame().unwrap().unwrap();
+        let pt_rekey = server_session.decrypt_packet(&rx_post_rekey).unwrap();
+        assert_eq!(pt_rekey, b"post-rekey-data");
+
+        // 9. Teardown
+        client_session.close();
+        server_session.close();
+        assert!(client_session.is_closed());
+        assert!(server_session.is_closed());
+    }
 }
+
 
