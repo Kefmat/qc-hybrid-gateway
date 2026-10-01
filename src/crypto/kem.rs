@@ -35,12 +35,21 @@ impl std::fmt::Debug for HybridKemPublicKey {
 }
 
 impl HybridKemPublicKey {
+    pub fn x25519_pk(&self) -> &[u8; X25519_KEY_SIZE] {
+        &self.x25519_pk
+    }
+
+    pub fn kyber_pk(&self) -> &KyberPublicKey {
+        &self.kyber_pk
+    }
+
     pub fn to_bytes(&self) -> Vec<u8> {
         let mut bytes = Vec::with_capacity(X25519_KEY_SIZE + self.kyber_pk.as_bytes().len());
         bytes.extend_from_slice(&self.x25519_pk);
         bytes.extend_from_slice(self.kyber_pk.as_bytes());
         bytes
     }
+
 
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
         if bytes.len() < X25519_KEY_SIZE {
@@ -215,6 +224,14 @@ mod tests {
         assert!(HybridKemPublicKey::from_bytes(&short_bytes).is_err());
         assert!(HybridKemCiphertext::from_bytes(&short_bytes).is_err());
     }
+
+    #[test]
+    fn test_kem_public_key_accessors() {
+        let pair = HybridKemKeyPair::generate();
+        assert_eq!(pair.public_key.x25519_pk(), &pair.public_key.x25519_pk);
+        assert_eq!(pair.public_key.kyber_pk().as_bytes(), pair.public_key.kyber_pk.as_bytes());
+    }
 }
+
 
 

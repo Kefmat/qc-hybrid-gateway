@@ -37,12 +37,21 @@ impl std::fmt::Debug for HybridSigPublicKey {
 }
 
 impl HybridSigPublicKey {
+    pub fn ed25519_pk(&self) -> &[u8; ED25519_PUBLIC_KEY_SIZE] {
+        &self.ed25519_pk
+    }
+
+    pub fn dilithium_pk(&self) -> &DilithiumPublicKey {
+        &self.dilithium_pk
+    }
+
     pub fn to_bytes(&self) -> Vec<u8> {
         let mut bytes = Vec::with_capacity(ED25519_PUBLIC_KEY_SIZE + self.dilithium_pk.as_bytes().len());
         bytes.extend_from_slice(&self.ed25519_pk);
         bytes.extend_from_slice(self.dilithium_pk.as_bytes());
         bytes
     }
+
 
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
         if bytes.len() < ED25519_PUBLIC_KEY_SIZE {
@@ -217,6 +226,14 @@ mod tests {
         let short_sig_bytes = [0u8; 32];
         assert!(HybridSignature::from_bytes(&short_sig_bytes).is_err());
     }
+
+    #[test]
+    fn test_sig_public_key_accessors() {
+        let pair = HybridSigKeyPair::generate();
+        assert_eq!(pair.public_key.ed25519_pk(), &pair.public_key.ed25519_pk);
+        assert_eq!(pair.public_key.dilithium_pk().as_bytes(), pair.public_key.dilithium_pk.as_bytes());
+    }
 }
+
 
 
