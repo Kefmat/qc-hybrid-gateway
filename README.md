@@ -22,6 +22,8 @@ The gateway combines NIST-standardized Post-Quantum Cryptography (PQC) algorithm
 * **Cipher**: **ChaCha20-Poly1305 AEAD** (RFC 8439)
 * **Session Derivation**: Separate client-to-server and server-to-client unidirectional write keys derived from the master secret bound to the handshake transcript hash.
 * **Wire Protocol Framing**: Versioned binary framing (`PacketHeader`, `PacketFrame`, `PacketType`) with sequence indexing and payload bounds.
+* **Stream Codec**: Incremental buffer frame parser (`FrameDecoder`) supporting chunked streaming and multi-frame processing.
+* **Session State Machine**: Comprehensive lifecycle tracking (`Session`, `SessionRole`, `SessionState`) with sequence counters and rekey triggers.
 * **Anti-Replay Defense**: Sliding-window bitmask filter detecting replayed and out-of-order packets.
 * **Memory Safety**: Automatic secret key zeroization on drop (`zeroize`).
 
@@ -65,6 +67,35 @@ All network communication uses a fixed 14-byte binary header followed by the var
 
 ---
 
+## Session State Machine & Lifecycle
+
+The `Session` engine manages tunnel state transitions across the connection lifecycle:
+
+```text
++-------------------+
+|   Uninitialized   |
++---------+---------+
+          | (establish)
+          v
++-------------------+       trigger_rekey()      +-------------------+
+|    Established    | -------------------------> |     Rekeying      |
+| (encrypt/decrypt) | <------------------------- | (complete_rekey)  |
++---------+---------+                            +-------------------+
+          |
+          | close()
+          v
++-------------------+
+|      Closed       |
++-------------------+
+```
+
+- **Uninitialized**: Session allocated with defined role (`Client` or `Server`), ciphers unset.
+- **Established**: Keys established, sequence numbers active, anti-replay active, data encryption/decryption permitted.
+- **Rekeying**: Transition state during key rotation before completing with new `SessionKeys`.
+- **Closed**: Terminated session with ciphers zeroized and wiped from memory.
+
+---
+
 ## Directory Structure
 
 ```text
@@ -73,7 +104,7 @@ pqc-hybrid-gateway/
 ├── README.md
 ├── .gitignore
 └── src/
-    ├── lib.rs              # Core library exports and unit test suite
+    ├── lib.rs              # Core library exports and integration test suite
     ├── main.rs             # CLI interface (keygen, verify, bench)
     ├── crypto/
     │   ├── mod.rs          # Crypto subsystem declarations
@@ -81,8 +112,12 @@ pqc-hybrid-gateway/
     │   ├── sig.rs          # ML-DSA-65 + Ed25519 Hybrid Signatures
     │   ├── aead.rs         # ChaCha20-Poly1305 Authenticated Encryption
     │   └── kdf.rs          # HKDF-SHA256 Transcript Binding & Session Derivation
-    └── protocol/
-        └── mod.rs          # Wire framing (PacketHeader, PacketFrame) and anti-replay filter
+    ├── protocol/
+    │   ├── mod.rs          # Wire framing (PacketHeader, PacketFrame) and anti-replay filter
+    │   ├── handshake.rs    # HandshakeInit and HandshakeResponse messages
+    │   └── codec.rs        # FrameDecoder stream codec helper
+    └── session/
+        └── mod.rs          # Session state machine, rekeying, and bidirectional traffic
 ```
 
 ---
@@ -120,10 +155,11 @@ cargo run --release -- bench
 
 ## Protocol Handshake & Transport Lifecycle
 
-1. **Client Initiation**: The client encapsulates a hybrid shared secret using the server's public key (`ML-KEM-768` + `X25519`) and sends a `HandshakeInit` frame.
-2. **Server Authentication**: The server decapsulates the shared secret, signs the client handshake payload with its composite identity key (`ML-DSA-65` + `Ed25519`), and returns a `HandshakeResp` frame.
+1. **Client Initiation**: The client generates an ephemeral hybrid KEM keypair and transmits a signed `HandshakeInit` message with a nonce.
+2. **Server Authentication**: The server encapsulates a shared secret against the client's public key, signs the ciphertext and nonce with its composite identity key (`ML-DSA-65` + `Ed25519`), and returns a `HandshakeResponse`.
 3. **Transcript Hash & Key Derivation**: Both peers compute `SHA-256` over the handshake transcript and derive unidirectional AEAD session write keys via `HKDF-SHA256`.
 4. **Encrypted Transport**: Application data is packaged into `Data` frames, encrypted using `ChaCha20-Poly1305` with sequential nonce counters and validated against sliding-window anti-replay filters.
+5. **Periodic Rekeying**: Upon reaching threshold packet counts, sessions transition through `Rekeying` to rotate session keys without dropping connectivity.
 
 ---
 
@@ -133,6 +169,3 @@ cargo run --release -- bench
 - **Transcript Binding**: All derived session keys are strictly bound to ephemeral exchange transcripts via HKDF-SHA256.
 - **Anti-Replay Window**: Uses configurable sliding-window bitmask verification (default window: 64 packets) to prevent packet replay attacks.
 - **Memory Safety & Invariants**: All frame lengths and header fields are strictly bounded by `MAX_FRAME_SIZE` (64 KB) with checked constructors.
-
-
-
