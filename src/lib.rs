@@ -6,7 +6,7 @@ pub use crypto::aead::AeadCipher;
 pub use crypto::kdf::{derive_hybrid_shared_secret, derive_session_keys, hash_transcript, SessionKeys};
 pub use crypto::kem::{HybridKemCiphertext, HybridKemKeyPair, HybridKemPublicKey, HybridKemSecretKey};
 pub use crypto::sig::{HybridSigKeyPair, HybridSigPublicKey, HybridSigSecretKey, HybridSignature};
-pub use protocol::{AntiReplayFilter, HandshakeInit, HandshakeResponse, PacketFrame, PacketHeader, PacketType};
+pub use protocol::{AntiReplayFilter, FrameDecoder, HandshakeInit, HandshakeResponse, PacketFrame, PacketHeader, PacketType};
 pub use session::{Session, SessionRole, SessionState};
 
 #[cfg(test)]

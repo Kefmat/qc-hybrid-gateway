@@ -1,7 +1,9 @@
 use std::collections::HashSet;
 use std::fmt;
 
+pub mod codec;
 pub mod handshake;
+pub use codec::FrameDecoder;
 pub use handshake::{HandshakeInit, HandshakeResponse, HANDSHAKE_NONCE_SIZE};
 
 pub const PROTOCOL_VERSION: u8 = 1;
