@@ -154,6 +154,44 @@ impl Session {
         let aad = format!("seq={}", frame.seq());
         cipher.decrypt(frame.seq(), aad.as_bytes(), &frame.payload)
     }
+
+    pub fn is_rekey_needed(&self) -> bool {
+        self.tx_seq >= self.rekey_threshold
+    }
+
+    pub fn trigger_rekey(&mut self) -> Result<(), String> {
+        if self.state != SessionState::Established {
+            return Err(format!("Cannot trigger rekey from state: {}", self.state));
+        }
+        self.state = SessionState::Rekeying;
+        Ok(())
+    }
+
+    pub fn complete_rekey(&mut self, keys: &SessionKeys) -> Result<(), String> {
+        if self.state != SessionState::Rekeying {
+            return Err(format!("Cannot complete rekey in state: {}", self.state));
+        }
+
+        let (tx_key, rx_key) = match self.role {
+            SessionRole::Client => (keys.client_write_key(), keys.server_write_key()),
+            SessionRole::Server => (keys.server_write_key(), keys.client_write_key()),
+        };
+
+        self.tx_cipher = Some(AeadCipher::new(tx_key));
+        self.rx_cipher = Some(AeadCipher::new(rx_key));
+        self.state = SessionState::Established;
+        self.tx_seq = 0;
+        self.rx_filter.reset();
+
+        Ok(())
+    }
+
+    pub fn close(&mut self) {
+        self.state = SessionState::Closed;
+        self.tx_cipher = None;
+        self.rx_cipher = None;
+        self.rx_filter.reset();
+    }
 }
 
 #[cfg(test)]
@@ -252,4 +290,51 @@ mod tests {
         let err_dec = client.decrypt_packet(&frame);
         assert!(err_dec.is_err());
     }
+
+    #[test]
+    fn test_session_rekeying_lifecycle() {
+        let mut client = Session::new_client();
+        let initial_keys = SessionKeys::new([55u8; 32], [66u8; 32]);
+        client.establish(&initial_keys).unwrap();
+
+        client.set_rekey_threshold(2);
+        assert_eq!(client.rekey_threshold(), 2);
+        assert!(!client.is_rekey_needed());
+
+        client.encrypt_packet(PacketType::Data, b"msg1").unwrap();
+        assert!(!client.is_rekey_needed());
+
+        client.encrypt_packet(PacketType::Data, b"msg2").unwrap();
+        assert!(client.is_rekey_needed());
+
+        // Trigger rekey
+        assert!(client.trigger_rekey().is_ok());
+        assert_eq!(client.state(), SessionState::Rekeying);
+        assert!(!client.is_established());
+
+        // Complete rekey
+        let rekeyed_keys = SessionKeys::new([77u8; 32], [88u8; 32]);
+        assert!(client.complete_rekey(&rekeyed_keys).is_ok());
+        assert!(client.is_established());
+        assert_eq!(client.tx_seq(), 0);
+        assert!(!client.is_rekey_needed());
+    }
+
+    #[test]
+    fn test_session_close_lifecycle() {
+        let mut client = Session::new_client();
+        let keys = SessionKeys::new([1u8; 32], [2u8; 32]);
+        client.establish(&keys).unwrap();
+        assert!(client.is_established());
+
+        client.close();
+        assert!(client.is_closed());
+        assert!(!client.is_established());
+
+        // Operations fail after close
+        assert!(client.encrypt_packet(PacketType::Data, b"data").is_err());
+        assert!(client.trigger_rekey().is_err());
+        assert!(client.establish(&keys).is_err());
+    }
 }
+
