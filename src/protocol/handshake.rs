@@ -1,6 +1,6 @@
 use crate::crypto::{
     kem::{HybridKemCiphertext, HybridKemPublicKey},
-    sig::HybridSignature,
+    sig::{sign_hybrid, verify_hybrid, HybridSigPublicKey, HybridSigSecretKey, HybridSignature},
 };
 
 pub const HANDSHAKE_NONCE_SIZE: usize = 16;
@@ -23,6 +23,27 @@ impl HandshakeInit {
             nonce,
             signature,
         }
+    }
+
+    pub fn create(
+        ephemeral_pk: HybridKemPublicKey,
+        nonce: [u8; HANDSHAKE_NONCE_SIZE],
+        signer_sk: &HybridSigSecretKey,
+    ) -> Self {
+        let mut signed_data = ephemeral_pk.to_bytes();
+        signed_data.extend_from_slice(&nonce);
+        let signature = sign_hybrid(&signed_data, signer_sk);
+        Self {
+            ephemeral_pk,
+            nonce,
+            signature,
+        }
+    }
+
+    pub fn verify(&self, signer_pk: &HybridSigPublicKey) -> bool {
+        let mut signed_data = self.ephemeral_pk.to_bytes();
+        signed_data.extend_from_slice(&self.nonce);
+        verify_hybrid(&signed_data, &self.signature, signer_pk)
     }
 
     pub fn encoded_len(&self) -> usize {
@@ -97,6 +118,27 @@ impl HandshakeResponse {
         }
     }
 
+    pub fn create(
+        ciphertext: HybridKemCiphertext,
+        nonce: [u8; HANDSHAKE_NONCE_SIZE],
+        signer_sk: &HybridSigSecretKey,
+    ) -> Self {
+        let mut signed_data = ciphertext.to_bytes();
+        signed_data.extend_from_slice(&nonce);
+        let signature = sign_hybrid(&signed_data, signer_sk);
+        Self {
+            ciphertext,
+            nonce,
+            signature,
+        }
+    }
+
+    pub fn verify(&self, signer_pk: &HybridSigPublicKey) -> bool {
+        let mut signed_data = self.ciphertext.to_bytes();
+        signed_data.extend_from_slice(&self.nonce);
+        verify_hybrid(&signed_data, &self.signature, signer_pk)
+    }
+
     pub fn encoded_len(&self) -> usize {
         4 + self.ciphertext.encoded_len() + HANDSHAKE_NONCE_SIZE + 4 + self.signature.encoded_len()
     }
@@ -148,3 +190,63 @@ impl HandshakeResponse {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::crypto::{
+        kem::{encapsulate_hybrid, HybridKemKeyPair},
+        sig::HybridSigKeyPair,
+    };
+
+    #[test]
+    fn test_handshake_init_roundtrip_and_verify() {
+        let kem_keys = HybridKemKeyPair::generate();
+        let sig_keys = HybridSigKeyPair::generate();
+        let nonce = [7u8; HANDSHAKE_NONCE_SIZE];
+
+        let init = HandshakeInit::create(kem_keys.public_key, nonce, &sig_keys.secret_key);
+        assert!(init.verify(&sig_keys.public_key));
+
+        let encoded = init.to_bytes();
+        assert_eq!(encoded.len(), init.encoded_len());
+
+        let decoded = HandshakeInit::from_bytes(&encoded).expect("failed to decode HandshakeInit");
+        assert_eq!(init, decoded);
+        assert!(decoded.verify(&sig_keys.public_key));
+
+        // Wrong public key fails verification
+        let other_sig_keys = HybridSigKeyPair::generate();
+        assert!(!decoded.verify(&other_sig_keys.public_key));
+    }
+
+    #[test]
+    fn test_handshake_response_roundtrip_and_verify() {
+        let kem_keys = HybridKemKeyPair::generate();
+        let sig_keys = HybridSigKeyPair::generate();
+        let (ct, _) = encapsulate_hybrid(&kem_keys.public_key);
+        let nonce = [9u8; HANDSHAKE_NONCE_SIZE];
+
+        let resp = HandshakeResponse::create(ct, nonce, &sig_keys.secret_key);
+        assert!(resp.verify(&sig_keys.public_key));
+
+        let encoded = resp.to_bytes();
+        assert_eq!(encoded.len(), resp.encoded_len());
+
+        let decoded = HandshakeResponse::from_bytes(&encoded).expect("failed to decode HandshakeResponse");
+        assert_eq!(resp, decoded);
+        assert!(decoded.verify(&sig_keys.public_key));
+
+        // Wrong public key fails verification
+        let other_sig_keys = HybridSigKeyPair::generate();
+        assert!(!decoded.verify(&other_sig_keys.public_key));
+    }
+
+    #[test]
+    fn test_handshake_decode_truncated_errors() {
+        let short = [0u8; 3];
+        assert!(HandshakeInit::from_bytes(&short).is_err());
+        assert!(HandshakeResponse::from_bytes(&short).is_err());
+    }
+}
+
