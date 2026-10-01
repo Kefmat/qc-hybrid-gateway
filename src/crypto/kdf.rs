@@ -33,6 +33,13 @@ pub struct SessionKeys {
 }
 
 impl SessionKeys {
+    pub fn new(client_write_key: [u8; 32], server_write_key: [u8; 32]) -> Self {
+        Self {
+            client_write_key,
+            server_write_key,
+        }
+    }
+
     pub fn client_write_key(&self) -> &[u8; 32] {
         &self.client_write_key
     }
@@ -48,7 +55,6 @@ impl Drop for SessionKeys {
         self.server_write_key.zeroize();
     }
 }
-
 
 pub fn derive_session_keys(master_shared_secret: &[u8; 32], transcript_hash: &[u8; 32]) -> SessionKeys {
     let hk = Hkdf::<Sha256>::new(Some(SESSION_SALT), master_shared_secret);
@@ -66,11 +72,9 @@ pub fn derive_session_keys(master_shared_secret: &[u8; 32], transcript_hash: &[u
     hk.expand(&server_info, &mut server_write_key)
         .expect("HKDF expand server key failed");
 
-    SessionKeys {
-        client_write_key,
-        server_write_key,
-    }
+    SessionKeys::new(client_write_key, server_write_key)
 }
+
 
 #[cfg(test)]
 mod tests {
@@ -136,7 +140,17 @@ mod tests {
         assert_eq!(session_keys.client_write_key(), &session_keys.client_write_key);
         assert_eq!(session_keys.server_write_key(), &session_keys.server_write_key);
     }
+
+    #[test]
+    fn test_session_keys_new() {
+        let client_k = [0x33u8; 32];
+        let server_k = [0x44u8; 32];
+        let session_keys = SessionKeys::new(client_k, server_k);
+        assert_eq!(session_keys.client_write_key, client_k);
+        assert_eq!(session_keys.server_write_key, server_k);
+    }
 }
+
 
 
 
