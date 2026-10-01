@@ -14,7 +14,22 @@ pub enum PacketType {
     Ping = 0x04,
 }
 
+impl PacketType {
+    pub const fn is_handshake(&self) -> bool {
+        matches!(self, PacketType::HandshakeInit | PacketType::HandshakeResp)
+    }
+
+    pub const fn is_data(&self) -> bool {
+        matches!(self, PacketType::Data)
+    }
+
+    pub const fn is_ping(&self) -> bool {
+        matches!(self, PacketType::Ping)
+    }
+}
+
 impl fmt::Display for PacketType {
+
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             PacketType::HandshakeInit => write!(f, "HandshakeInit"),
@@ -113,6 +128,18 @@ impl PacketHeader {
             payload_len,
         })
     }
+
+    pub const fn is_handshake(&self) -> bool {
+        self.packet_type.is_handshake()
+    }
+
+    pub const fn is_data(&self) -> bool {
+        self.packet_type.is_data()
+    }
+
+    pub const fn is_ping(&self) -> bool {
+        self.packet_type.is_ping()
+    }
 }
 
 impl fmt::Display for PacketHeader {
@@ -137,14 +164,26 @@ impl PacketFrame {
         Ok(Self { header, payload })
     }
 
-
     pub fn packet_type(&self) -> PacketType {
         self.header.packet_type
+    }
+
+    pub const fn is_handshake(&self) -> bool {
+        self.header.is_handshake()
+    }
+
+    pub const fn is_data(&self) -> bool {
+        self.header.is_data()
+    }
+
+    pub const fn is_ping(&self) -> bool {
+        self.header.is_ping()
     }
 
     pub fn seq(&self) -> u64 {
         self.header.seq
     }
+
 
     pub fn payload_len(&self) -> usize {
         self.payload.len()
@@ -286,9 +325,25 @@ mod tests {
     }
 
     #[test]
+    fn test_packet_type_predicates() {
+        assert!(PacketType::HandshakeInit.is_handshake());
+        assert!(PacketType::HandshakeResp.is_handshake());
+        assert!(!PacketType::Data.is_handshake());
+        assert!(PacketType::Data.is_data());
+        assert!(!PacketType::Ping.is_data());
+        assert!(PacketType::Ping.is_ping());
+
+        let frame = PacketFrame::new(PacketType::HandshakeInit, 1, vec![]).unwrap();
+        assert!(frame.is_handshake());
+        assert!(!frame.is_data());
+        assert!(!frame.is_ping());
+    }
+
+    #[test]
     fn test_packet_header_default() {
         let header = PacketHeader::default();
         assert_eq!(header.version, PROTOCOL_VERSION);
+
         assert_eq!(header.packet_type, PacketType::Data);
         assert_eq!(header.seq, 0);
         assert_eq!(header.payload_len, 0);
