@@ -47,8 +47,20 @@ pub struct PacketHeader {
     pub payload_len: u32,
 }
 
+impl Default for PacketHeader {
+    fn default() -> Self {
+        Self {
+            version: PROTOCOL_VERSION,
+            packet_type: PacketType::Data,
+            seq: 0,
+            payload_len: 0,
+        }
+    }
+}
+
 impl PacketHeader {
     pub fn new(packet_type: PacketType, seq: u64, payload_len: u32) -> Result<Self, String> {
+
         if payload_len as usize > MAX_FRAME_SIZE {
             return Err(format!(
                 "Payload length {} exceeds maximum frame size {}",
@@ -274,7 +286,17 @@ mod tests {
     }
 
     #[test]
+    fn test_packet_header_default() {
+        let header = PacketHeader::default();
+        assert_eq!(header.version, PROTOCOL_VERSION);
+        assert_eq!(header.packet_type, PacketType::Data);
+        assert_eq!(header.seq, 0);
+        assert_eq!(header.payload_len, 0);
+    }
+
+    #[test]
     fn test_packet_frame_accessors() {
+
         let frame = PacketFrame::new(PacketType::Data, 77, vec![1, 2, 3, 4]).unwrap();
         assert_eq!(frame.packet_type(), PacketType::Data);
         assert_eq!(frame.seq(), 77);
