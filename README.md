@@ -115,7 +115,8 @@ pqc-hybrid-gateway/
     ├── protocol/
     │   ├── mod.rs          # Wire framing (PacketHeader, PacketFrame) and anti-replay filter
     │   ├── handshake.rs    # HandshakeInit and HandshakeResponse messages
-    │   └── codec.rs        # FrameDecoder stream codec helper
+    │   ├── codec.rs        # FrameDecoder stream codec helper
+    │   └── error.rs        # Protocol and packet error types
     └── session/
         └── mod.rs          # Session state machine, rekeying, and bidirectional traffic
 ```
