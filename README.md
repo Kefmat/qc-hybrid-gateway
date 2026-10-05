@@ -145,11 +145,18 @@ Generate a sample pair of Hybrid KEM and Hybrid Signature public/private keys:
 cargo run -- keygen
 ```
 
+### Interactive Tunnel Simulation
+Simulate a complete end-to-end client-server handshake, streaming frame exchange, keepalive ping/pong, and telemetry reporting:
+```bash
+cargo run -- tunnel
+```
+
 ### Micro-benchmarks
 Benchmark the cryptographic primitives (KEM Keygen/Encap/Decap, Signature Sign/Verify, ChaCha20-Poly1305 AEAD Encrypt/Decrypt) locally:
 ```bash
 cargo run --release -- bench
 ```
+
 
 ---
 

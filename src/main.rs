@@ -5,7 +5,10 @@ use pqc_hybrid_gateway::crypto::{
     kem::{decapsulate_hybrid, encapsulate_hybrid, HybridKemKeyPair},
     sig::{sign_hybrid, verify_hybrid, HybridSigKeyPair},
 };
-use pqc_hybrid_gateway::protocol::AntiReplayFilter;
+use pqc_hybrid_gateway::protocol::{
+    AntiReplayFilter, FrameDecoder, HandshakeInit, HandshakeResponse, PacketType,
+};
+use pqc_hybrid_gateway::session::Session;
 use std::time::Instant;
 
 
@@ -28,7 +31,10 @@ enum Commands {
     Verify,
     /// Run cryptographic performance benchmarks
     Bench,
+    /// Simulate full Post-Quantum hybrid encrypted tunnel between client and server
+    Tunnel,
 }
+
 
 fn main() {
     tracing_subscriber::fmt::init();
@@ -189,6 +195,93 @@ fn main() {
             let aead_dec_dur = start.elapsed();
             println!("AEAD Decrypt (1KB):      {:?} per op", aead_dec_dur / aead_iters);
         }
+        Commands::Tunnel => {
+            println!("=== Post-Quantum Hybrid Gateway: Tunnel Simulation ===");
+
+            // 1. Setup Identities
+            println!("[Step 1] Initializing client and server long-term cryptographic identities...");
+            let client_sig = HybridSigKeyPair::generate();
+            let server_sig = HybridSigKeyPair::generate();
+
+            // 2. Handshake Phase
+            println!("[Step 2] Performing ML-KEM-768 / X25519 authenticated key exchange...");
+            let client_ephemeral_kem = HybridKemKeyPair::generate();
+            let client_nonce = [0x55u8; 16];
+            let init_msg = HandshakeInit::create(client_ephemeral_kem.public_key, client_nonce, &client_sig.secret_key);
+
+            let (kem_ct, server_shared_secret) = encapsulate_hybrid(&init_msg.ephemeral_pk);
+            let server_nonce = [0xAAu8; 16];
+            let resp_msg = HandshakeResponse::create(kem_ct.clone(), server_nonce, &server_sig.secret_key);
+
+            assert!(resp_msg.verify(&server_sig.public_key), "Server handshake verification failed");
+            let client_shared_secret = decapsulate_hybrid(&resp_msg.ciphertext, &client_ephemeral_kem.secret_key);
+            assert_eq!(client_shared_secret, server_shared_secret, "KEM shared secret mismatch");
+
+            // 3. Derive Session Keys
+            let transcript = hash_transcript(&[&init_msg.to_bytes(), &resp_msg.to_bytes()]);
+            let client_keys = derive_session_keys(&client_shared_secret, &transcript);
+            let server_keys = derive_session_keys(&server_shared_secret, &transcript);
+
+            let mut client_session = Session::new_client();
+            let mut server_session = Session::new_server();
+            client_session.establish(&client_keys).expect("Client session establish failed");
+            server_session.establish(&server_keys).expect("Server session establish failed");
+
+            println!("[+] Handshake complete. Tunnel session active.");
+            println!("    - Session ID: {}", client_session.session_id());
+            println!("    - Client Role: {}, Server Role: {}", client_session.role(), server_session.role());
+
+            // 4. Bidirectional Stream Framing & Traffic
+            println!("[Step 3] Streaming bidirectional application data over ChaCha20-Poly1305...");
+            let mut client_decoder = FrameDecoder::new();
+            let mut server_decoder = FrameDecoder::new();
+
+            let messages = [
+                "GET /api/v1/quantum-secure-telemetry HTTP/1.1",
+                "Host: pqc-gateway.internal",
+                "User-Agent: pqc-tunnel-client/0.1.0",
+                "Authorization: Bearer PQC-HYBRID-TOKEN-OK",
+            ];
+
+            for msg in &messages {
+                let frame = client_session.encrypt_packet(PacketType::Data, msg.as_bytes()).unwrap();
+                server_decoder.feed(&frame.encode());
+                let rx_frame = server_decoder.decode_frame().unwrap().unwrap();
+                let decrypted = server_session.decrypt_packet(&rx_frame).unwrap();
+                println!("    [Client -> Server] (seq={}): {}", rx_frame.seq(), String::from_utf8_lossy(&decrypted));
+            }
+
+            // Server responds
+            let server_reply = b"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\nPost-Quantum Encrypted Tunnel Active";
+            let resp_frame = server_session.encrypt_packet(PacketType::Data, server_reply).unwrap();
+            client_decoder.feed(&resp_frame.encode());
+            let rx_resp_frame = client_decoder.decode_frame().unwrap().unwrap();
+            let decrypted_resp = client_session.decrypt_packet(&rx_resp_frame).unwrap();
+            println!("    [Server -> Client] (seq={}): {}", rx_resp_frame.seq(), String::from_utf8_lossy(&decrypted_resp));
+
+            // 5. Keepalive Ping/Pong
+            println!("[Step 4] Sending keepalive ping frame...");
+            let ping_frame = client_session.create_ping(123456789).unwrap();
+            server_decoder.feed(&ping_frame.encode());
+            let rx_ping = server_decoder.decode_frame().unwrap().unwrap();
+            let ping_ts = server_session.handle_ping(&rx_ping).unwrap();
+            println!("    [+] Server received verified ping with timestamp: {}", ping_ts);
+
+            // 6. Graceful Teardown & Metrics
+            client_session.close();
+            server_session.close();
+            println!("[Step 5] Tunnel session closed gracefully.");
+            println!("    - Client Metrics: TX Packets={}, TX Bytes={}, RX Packets={}, RX Bytes={}",
+                client_session.metrics().tx_packets, client_session.metrics().tx_bytes,
+                client_session.metrics().rx_packets, client_session.metrics().rx_bytes
+            );
+            println!("    - Server Metrics: TX Packets={}, TX Bytes={}, RX Packets={}, RX Bytes={}",
+                server_session.metrics().tx_packets, server_session.metrics().tx_bytes,
+                server_session.metrics().rx_packets, server_session.metrics().rx_bytes
+            );
+            println!("=== Tunnel Simulation Succeeded ===");
+        }
     }
 }
+
 
