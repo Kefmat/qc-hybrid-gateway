@@ -10,7 +10,7 @@ pub use protocol::{
     AntiReplayFilter, FrameDecoder, HandshakeInit, HandshakeResponse, PacketFrame, PacketHeader,
     PacketType, ProtocolError,
 };
-pub use session::{Session, SessionMetrics, SessionRole, SessionState};
+pub use session::{Session, SessionId, SessionMetrics, SessionRole, SessionState, SESSION_ID_SIZE};
 
 #[cfg(test)]
 mod tests {

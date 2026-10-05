@@ -4,6 +4,61 @@ use crate::crypto::{aead::AeadCipher, kdf::SessionKeys};
 use crate::protocol::{AntiReplayFilter, PacketFrame, PacketType, DEFAULT_REPLAY_WINDOW_SIZE};
 
 pub const DEFAULT_REKEY_PACKET_THRESHOLD: u64 = 1_000_000;
+pub const SESSION_ID_SIZE: usize = 16;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct SessionId(pub [u8; SESSION_ID_SIZE]);
+
+impl Default for SessionId {
+    fn default() -> Self {
+        Self::generate()
+    }
+}
+
+impl SessionId {
+    pub fn new(bytes: [u8; SESSION_ID_SIZE]) -> Self {
+        Self(bytes)
+    }
+
+    pub fn generate() -> Self {
+        let mut bytes = [0u8; SESSION_ID_SIZE];
+        rand::RngCore::fill_bytes(&mut rand::rngs::OsRng, &mut bytes);
+        Self(bytes)
+    }
+
+    pub fn as_bytes(&self) -> &[u8; SESSION_ID_SIZE] {
+        &self.0
+    }
+
+    pub fn to_hex(&self) -> String {
+        self.0.iter().map(|b| format!("{:02x}", b)).collect()
+    }
+
+    pub fn from_hex(hex: &str) -> Result<Self, String> {
+        if hex.len() != SESSION_ID_SIZE * 2 {
+            return Err(format!(
+                "Invalid hex length for SessionId: expected {} characters, got {}",
+                SESSION_ID_SIZE * 2,
+                hex.len()
+            ));
+        }
+
+        let mut bytes = [0u8; SESSION_ID_SIZE];
+        for i in 0..SESSION_ID_SIZE {
+            let byte_str = &hex[i * 2..i * 2 + 2];
+            bytes[i] = u8::from_str_radix(byte_str, 16)
+                .map_err(|e| format!("Invalid hex byte '{}': {}", byte_str, e))?;
+        }
+
+        Ok(Self(bytes))
+    }
+}
+
+impl fmt::Display for SessionId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.to_hex())
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SessionRole {
@@ -52,6 +107,7 @@ pub struct SessionMetrics {
 }
 
 pub struct Session {
+    session_id: SessionId,
     role: SessionRole,
     state: SessionState,
     tx_seq: u64,
@@ -64,7 +120,12 @@ pub struct Session {
 
 impl Session {
     pub fn new(role: SessionRole) -> Self {
+        Self::with_session_id(role, SessionId::generate())
+    }
+
+    pub fn with_session_id(role: SessionRole, session_id: SessionId) -> Self {
         Self {
+            session_id,
             role,
             state: SessionState::Uninitialized,
             tx_seq: 0,
@@ -83,6 +144,11 @@ impl Session {
     pub fn new_server() -> Self {
         Self::new(SessionRole::Server)
     }
+
+    pub fn session_id(&self) -> &SessionId {
+        &self.session_id
+    }
+
 
     pub fn role(&self) -> SessionRole {
         self.role
@@ -450,7 +516,30 @@ mod tests {
         let bad_ping_frame = client.encrypt_packet(PacketType::Ping, b"short").unwrap();
         assert!(server.handle_ping(&bad_ping_frame).is_err());
     }
+
+    #[test]
+    fn test_session_id_lifecycle() {
+        let sid = SessionId::generate();
+        assert_eq!(sid.as_bytes().len(), SESSION_ID_SIZE);
+
+        let hex = sid.to_hex();
+        assert_eq!(hex.len(), SESSION_ID_SIZE * 2);
+        assert_eq!(sid.to_string(), hex);
+
+        let parsed = SessionId::from_hex(&hex).unwrap();
+        assert_eq!(sid, parsed);
+
+        // Invalid hex fails
+        assert!(SessionId::from_hex("invalid").is_err());
+        assert!(SessionId::from_hex("zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz").is_err());
+
+        // Custom session ID initialization
+        let custom_sid = SessionId::new([0xab; SESSION_ID_SIZE]);
+        let session = Session::with_session_id(SessionRole::Client, custom_sid);
+        assert_eq!(session.session_id(), &custom_sid);
+    }
 }
+
 
 
 
