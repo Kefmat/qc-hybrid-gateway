@@ -185,6 +185,23 @@ impl Session {
         Ok(plaintext)
     }
 
+    pub fn create_ping(&mut self, timestamp: u64) -> Result<PacketFrame, String> {
+        self.encrypt_packet(PacketType::Ping, &timestamp.to_be_bytes())
+    }
+
+    pub fn handle_ping(&mut self, frame: &PacketFrame) -> Result<u64, String> {
+        if frame.packet_type() != PacketType::Ping {
+            return Err(format!("Expected Ping packet, received: {}", frame.packet_type()));
+        }
+
+        let decrypted = self.decrypt_packet(frame)?;
+        if decrypted.len() != 8 {
+            return Err(format!("Invalid ping payload size: {} bytes (expected 8)", decrypted.len()));
+        }
+
+        Ok(u64::from_be_bytes(decrypted[..8].try_into().unwrap()))
+    }
+
     pub fn is_rekey_needed(&self) -> bool {
         self.tx_seq >= self.rekey_threshold
     }
@@ -400,6 +417,40 @@ mod tests {
         assert_eq!(client.metrics().tx_packets, 0);
         assert_eq!(client.metrics().tx_bytes, 0);
     }
+
+    #[test]
+    fn test_session_ping_roundtrip() {
+        let mut client = Session::new_client();
+        let mut server = Session::new_server();
+        let keys = SessionKeys::new([10u8; 32], [20u8; 32]);
+        client.establish(&keys).unwrap();
+        server.establish(&keys).unwrap();
+
+        let timestamp = 1727784000;
+        let ping_frame = client.create_ping(timestamp).unwrap();
+        assert!(ping_frame.is_ping());
+
+        let received_timestamp = server.handle_ping(&ping_frame).unwrap();
+        assert_eq!(received_timestamp, timestamp);
+    }
+
+    #[test]
+    fn test_session_ping_validation_errors() {
+        let mut client = Session::new_client();
+        let mut server = Session::new_server();
+        let keys = SessionKeys::new([10u8; 32], [20u8; 32]);
+        client.establish(&keys).unwrap();
+        server.establish(&keys).unwrap();
+
+        // Data frame passed to handle_ping fails
+        let data_frame = client.encrypt_packet(PacketType::Data, b"not-a-ping").unwrap();
+        assert!(server.handle_ping(&data_frame).is_err());
+
+        // Ping frame with invalid length fails
+        let bad_ping_frame = client.encrypt_packet(PacketType::Ping, b"short").unwrap();
+        assert!(server.handle_ping(&bad_ping_frame).is_err());
+    }
 }
+
 
 
