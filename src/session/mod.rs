@@ -41,6 +41,16 @@ impl fmt::Display for SessionState {
     }
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SessionMetrics {
+    pub tx_packets: u64,
+    pub rx_packets: u64,
+    pub tx_bytes: u64,
+    pub rx_bytes: u64,
+    pub replays_dropped: u64,
+    pub rekeys_completed: u64,
+}
+
 pub struct Session {
     role: SessionRole,
     state: SessionState,
@@ -49,6 +59,7 @@ pub struct Session {
     tx_cipher: Option<AeadCipher>,
     rx_cipher: Option<AeadCipher>,
     rekey_threshold: u64,
+    metrics: SessionMetrics,
 }
 
 impl Session {
@@ -61,6 +72,7 @@ impl Session {
             tx_cipher: None,
             rx_cipher: None,
             rekey_threshold: DEFAULT_REKEY_PACKET_THRESHOLD,
+            metrics: SessionMetrics::default(),
         }
     }
 
@@ -90,6 +102,14 @@ impl Session {
 
     pub fn tx_seq(&self) -> u64 {
         self.tx_seq
+    }
+
+    pub fn metrics(&self) -> &SessionMetrics {
+        &self.metrics
+    }
+
+    pub fn reset_metrics(&mut self) {
+        self.metrics = SessionMetrics::default();
     }
 
     pub fn set_state(&mut self, state: SessionState) {
@@ -122,6 +142,7 @@ impl Session {
 
         Ok(())
     }
+
     pub fn encrypt_packet(&mut self, packet_type: PacketType, plaintext: &[u8]) -> Result<PacketFrame, String> {
         if self.state != SessionState::Established {
             return Err(format!("Cannot encrypt packet in state: {}", self.state));
@@ -134,6 +155,9 @@ impl Session {
         let aad = format!("seq={}", seq);
         let ciphertext = cipher.encrypt(seq, aad.as_bytes(), plaintext)?;
 
+        self.metrics.tx_packets += 1;
+        self.metrics.tx_bytes += plaintext.len() as u64;
+
         PacketFrame::new(packet_type, seq, ciphertext)
     }
 
@@ -145,6 +169,7 @@ impl Session {
         let cipher = self.rx_cipher.as_ref().ok_or("RX cipher uninitialized")?;
 
         if !self.rx_filter.check_and_update(frame.seq()) {
+            self.metrics.replays_dropped += 1;
             return Err(format!(
                 "Anti-replay check failed for sequence number {}",
                 frame.seq()
@@ -152,7 +177,12 @@ impl Session {
         }
 
         let aad = format!("seq={}", frame.seq());
-        cipher.decrypt(frame.seq(), aad.as_bytes(), &frame.payload)
+        let plaintext = cipher.decrypt(frame.seq(), aad.as_bytes(), &frame.payload)?;
+
+        self.metrics.rx_packets += 1;
+        self.metrics.rx_bytes += plaintext.len() as u64;
+
+        Ok(plaintext)
     }
 
     pub fn is_rekey_needed(&self) -> bool {
@@ -182,6 +212,7 @@ impl Session {
         self.state = SessionState::Established;
         self.tx_seq = 0;
         self.rx_filter.reset();
+        self.metrics.rekeys_completed += 1;
 
         Ok(())
     }
@@ -193,6 +224,7 @@ impl Session {
         self.rx_filter.reset();
     }
 }
+
 
 #[cfg(test)]
 mod tests {
@@ -336,5 +368,38 @@ mod tests {
         assert!(client.trigger_rekey().is_err());
         assert!(client.establish(&keys).is_err());
     }
+
+    #[test]
+    fn test_session_metrics_tracking() {
+        let mut client = Session::new_client();
+        let mut server = Session::new_server();
+        let keys = SessionKeys::new([1u8; 32], [2u8; 32]);
+        client.establish(&keys).unwrap();
+        server.establish(&keys).unwrap();
+
+        let payload = b"metrics-test-data";
+        let frame = client.encrypt_packet(PacketType::Data, payload).unwrap();
+        assert_eq!(client.metrics().tx_packets, 1);
+        assert_eq!(client.metrics().tx_bytes, payload.len() as u64);
+
+        let _ = server.decrypt_packet(&frame).unwrap();
+        assert_eq!(server.metrics().rx_packets, 1);
+        assert_eq!(server.metrics().rx_bytes, payload.len() as u64);
+
+        // Test replay metric increment
+        let _ = server.decrypt_packet(&frame);
+        assert_eq!(server.metrics().replays_dropped, 1);
+
+        // Test rekey metric increment
+        client.trigger_rekey().unwrap();
+        let new_keys = SessionKeys::new([3u8; 32], [4u8; 32]);
+        client.complete_rekey(&new_keys).unwrap();
+        assert_eq!(client.metrics().rekeys_completed, 1);
+
+        client.reset_metrics();
+        assert_eq!(client.metrics().tx_packets, 0);
+        assert_eq!(client.metrics().tx_bytes, 0);
+    }
 }
+
 
