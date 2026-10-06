@@ -75,6 +75,14 @@ impl HybridSigPublicKey {
     }
 }
 
+impl TryFrom<&[u8]> for HybridSigPublicKey {
+    type Error = String;
+
+    fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
+        Self::from_bytes(bytes)
+    }
+}
+
 pub struct HybridSigSecretKey {
     pub ed25519_sk: [u8; ED25519_PUBLIC_KEY_SIZE],
     pub dilithium_sk: DilithiumSecretKey,
@@ -148,6 +156,13 @@ impl HybridSignature {
     }
 }
 
+impl TryFrom<&[u8]> for HybridSignature {
+    type Error = String;
+
+    fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
+        Self::from_bytes(bytes)
+    }
+}
 
 impl HybridSigKeyPair {
     pub fn generate() -> Self {
@@ -251,6 +266,19 @@ mod tests {
 
         let sig = sign_hybrid(b"message", &pair.secret_key);
         assert_eq!(sig.encoded_len(), sig.to_bytes().len());
+    }
+
+    #[test]
+    fn test_sig_try_from() {
+        let pair = HybridSigKeyPair::generate();
+        let pk_bytes = pair.public_key.to_bytes();
+        let pk: HybridSigPublicKey = pk_bytes.as_slice().try_into().expect("TryFrom pk failed");
+        assert_eq!(pk, pair.public_key);
+
+        let sig = sign_hybrid(b"try-from-signature-test", &pair.secret_key);
+        let sig_bytes = sig.to_bytes();
+        let decoded_sig: HybridSignature = sig_bytes.as_slice().try_into().expect("TryFrom sig failed");
+        assert_eq!(decoded_sig, sig);
     }
 }
 
