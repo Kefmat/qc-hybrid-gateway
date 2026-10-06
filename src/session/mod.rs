@@ -118,6 +118,20 @@ pub struct SessionMetrics {
     pub rekeys_completed: u64,
 }
 
+impl SessionMetrics {
+    pub fn total_packets(&self) -> u64 {
+        self.tx_packets.saturating_add(self.rx_packets)
+    }
+
+    pub fn total_bytes(&self) -> u64 {
+        self.tx_bytes.saturating_add(self.rx_bytes)
+    }
+
+    pub fn has_dropped_packets(&self) -> bool {
+        self.replays_dropped > 0
+    }
+}
+
 pub struct Session {
     session_id: SessionId,
     role: SessionRole,
@@ -484,6 +498,12 @@ mod tests {
         // Test replay metric increment
         let _ = server.decrypt_packet(&frame);
         assert_eq!(server.metrics().replays_dropped, 1);
+        assert!(server.metrics().has_dropped_packets());
+
+        // Test aggregate query helpers
+        assert_eq!(client.metrics().total_packets(), 1);
+        assert_eq!(client.metrics().total_bytes(), payload.len() as u64);
+        assert!(!client.metrics().has_dropped_packets());
 
         // Test rekey metric increment
         client.trigger_rekey().unwrap();
@@ -494,6 +514,9 @@ mod tests {
         client.reset_metrics();
         assert_eq!(client.metrics().tx_packets, 0);
         assert_eq!(client.metrics().tx_bytes, 0);
+        assert_eq!(client.metrics().total_packets(), 0);
+        assert_eq!(client.metrics().total_bytes(), 0);
+        assert!(!client.metrics().has_dropped_packets());
     }
 
     #[test]
