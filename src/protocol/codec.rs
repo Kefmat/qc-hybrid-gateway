@@ -40,6 +40,18 @@ impl FrameDecoder {
         self.buffer.is_empty()
     }
 
+    pub fn capacity(&self) -> usize {
+        self.buffer.capacity()
+    }
+
+    pub fn max_frame_size(&self) -> usize {
+        self.max_frame_size
+    }
+
+    pub fn reserve(&mut self, additional: usize) {
+        self.buffer.reserve(additional);
+    }
+
     pub fn clear(&mut self) {
         self.buffer.clear();
     }
@@ -146,5 +158,14 @@ mod tests {
         decoder.clear();
         assert!(decoder.is_empty());
         assert_eq!(decoder.buffer_len(), 0);
+    }
+
+    #[test]
+    fn test_codec_capacity_and_max_frame_size() {
+        let mut decoder = FrameDecoder::with_max_frame_size(2048);
+        assert_eq!(decoder.max_frame_size(), 2048);
+        assert!(decoder.capacity() >= 2048);
+        decoder.reserve(512);
+        assert!(decoder.capacity() >= 2048);
     }
 }
