@@ -60,6 +60,18 @@ impl fmt::Display for SessionId {
     }
 }
 
+impl AsRef<[u8]> for SessionId {
+    fn as_ref(&self) -> &[u8] {
+        &self.0
+    }
+}
+
+impl AsRef<[u8; SESSION_ID_SIZE]> for SessionId {
+    fn as_ref(&self) -> &[u8; SESSION_ID_SIZE] {
+        &self.0
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SessionRole {
     Client,
@@ -537,6 +549,12 @@ mod tests {
         let custom_sid = SessionId::new([0xab; SESSION_ID_SIZE]);
         let session = Session::with_session_id(SessionRole::Client, custom_sid);
         assert_eq!(session.session_id(), &custom_sid);
+
+        // AsRef checks
+        let slice: &[u8] = custom_sid.as_ref();
+        assert_eq!(slice, &[0xab; SESSION_ID_SIZE]);
+        let array_ref: &[u8; SESSION_ID_SIZE] = custom_sid.as_ref();
+        assert_eq!(array_ref, &[0xab; SESSION_ID_SIZE]);
     }
 }
 
