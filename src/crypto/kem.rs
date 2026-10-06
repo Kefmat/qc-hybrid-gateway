@@ -73,6 +73,14 @@ impl HybridKemPublicKey {
     }
 }
 
+impl TryFrom<&[u8]> for HybridKemPublicKey {
+    type Error = String;
+
+    fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
+        Self::from_bytes(bytes)
+    }
+}
+
 pub struct HybridKemSecretKey {
     pub x25519_sk: [u8; X25519_KEY_SIZE],
     pub kyber_sk: KyberSecretKey,
@@ -143,6 +151,14 @@ impl HybridKemCiphertext {
             x25519_ephemeral_pk,
             kyber_ct,
         })
+    }
+}
+
+impl TryFrom<&[u8]> for HybridKemCiphertext {
+    type Error = String;
+
+    fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
+        Self::from_bytes(bytes)
     }
 }
 
@@ -249,6 +265,19 @@ mod tests {
 
         let (ct, _) = encapsulate_hybrid(&pair.public_key);
         assert_eq!(ct.encoded_len(), ct.to_bytes().len());
+    }
+
+    #[test]
+    fn test_kem_try_from() {
+        let pair = HybridKemKeyPair::generate();
+        let pk_bytes = pair.public_key.to_bytes();
+        let pk: HybridKemPublicKey = pk_bytes.as_slice().try_into().expect("TryFrom pk failed");
+        assert_eq!(pk, pair.public_key);
+
+        let (ct, _) = encapsulate_hybrid(&pair.public_key);
+        let ct_bytes = ct.to_bytes();
+        let decoded_ct: HybridKemCiphertext = ct_bytes.as_slice().try_into().expect("TryFrom ct failed");
+        assert_eq!(decoded_ct, ct);
     }
 }
 
