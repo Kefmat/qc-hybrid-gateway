@@ -33,6 +33,8 @@ enum Commands {
     Bench,
     /// Simulate full Post-Quantum hybrid encrypted tunnel between client and server
     Tunnel,
+    /// Display cryptographic parameters and architectural specification
+    Info,
 }
 
 
@@ -41,6 +43,27 @@ fn main() {
     let cli = Cli::parse();
 
     match cli.command {
+        Commands::Info => {
+            println!("================================================================================");
+            println!("       PQC Hybrid Gateway - Architectural & Cryptographic Specification         ");
+            println!("================================================================================");
+            println!("  [+] Post-Quantum Hybrid KEM:");
+            println!("      - Post-Quantum Primitive: ML-KEM-768 (NIST FIPS 203)");
+            println!("      - Classical Primitive:    X25519 ECDH (RFC 7748)");
+            println!("      - KDF Binding:            HKDF-SHA256 (PQC-HYBRID-GATEWAY-KEM-V1)");
+            println!();
+            println!("  [+] Post-Quantum Hybrid Signatures:");
+            println!("      - Post-Quantum Primitive: ML-DSA-65 (NIST FIPS 204)");
+            println!("      - Classical Primitive:    Ed25519 (RFC 8032)");
+            println!("      - Dual Verification:      Both classical and post-quantum required");
+            println!();
+            println!("  [+] Symmetric Transport & Framing:");
+            println!("      - Symmetric Cipher:       ChaCha20-Poly1305 AEAD (RFC 8439)");
+            println!("      - Key Derivation:         HKDF-SHA256 bound to handshake transcript");
+            println!("      - Frame Header:           14-byte binary framing with sequence counters");
+            println!("      - Anti-Replay Filter:     64-packet sliding window bitmask");
+            println!("================================================================================");
+        }
         Commands::Keygen => {
             println!("--- Generating Post-Quantum Hybrid Keys ---");
             let kem_keys = HybridKemKeyPair::generate();
