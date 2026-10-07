@@ -196,6 +196,14 @@ impl PacketFrame {
         self.payload.len()
     }
 
+    pub fn payload(&self) -> &[u8] {
+        &self.payload
+    }
+
+    pub fn into_payload(self) -> Vec<u8> {
+        self.payload
+    }
+
     pub fn total_len(&self) -> usize {
         HEADER_SIZE + self.payload.len()
     }
@@ -363,13 +371,17 @@ mod tests {
         assert_eq!(frame.packet_type(), PacketType::Data);
         assert_eq!(frame.seq(), 77);
         assert_eq!(frame.payload_len(), 4);
+        assert_eq!(frame.payload(), &[1, 2, 3, 4]);
         assert_eq!(frame.total_len(), HEADER_SIZE + 4);
         assert!(!frame.is_empty());
+        assert_eq!(frame.clone().into_payload(), vec![1, 2, 3, 4]);
 
         let empty_frame = PacketFrame::new(PacketType::Ping, 88, vec![]).unwrap();
         assert_eq!(empty_frame.payload_len(), 0);
+        assert_eq!(empty_frame.payload(), &[] as &[u8]);
         assert_eq!(empty_frame.total_len(), HEADER_SIZE);
         assert!(empty_frame.is_empty());
+        assert_eq!(empty_frame.into_payload(), Vec::<u8>::new());
     }
 
 

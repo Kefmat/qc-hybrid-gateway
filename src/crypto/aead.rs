@@ -97,6 +97,25 @@ impl AeadCipher {
     }
 }
 
+impl From<&[u8; KEY_SIZE]> for AeadCipher {
+    fn from(key: &[u8; KEY_SIZE]) -> Self {
+        Self::new(key)
+    }
+}
+
+impl From<[u8; KEY_SIZE]> for AeadCipher {
+    fn from(key: [u8; KEY_SIZE]) -> Self {
+        Self::new(&key)
+    }
+}
+
+impl TryFrom<&[u8]> for AeadCipher {
+    type Error = String;
+
+    fn try_from(slice: &[u8]) -> Result<Self, Self::Error> {
+        Self::from_slice(slice)
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -182,6 +201,21 @@ mod tests {
         let ct2 = cipher.encrypt(1, aad, plaintext).unwrap();
         let decrypted = cipher.decrypt(1, aad, &ct2).unwrap();
         assert_eq!(plaintext.to_vec(), decrypted);
+    }
+
+    #[test]
+    fn test_aead_cipher_from_and_try_from() {
+        let key = [0x33u8; KEY_SIZE];
+        let cipher_ref: AeadCipher = (&key).into();
+        let cipher_val: AeadCipher = key.into();
+
+        let ct = cipher_ref.encrypt(1, b"aad", b"hello").unwrap();
+        let pt = cipher_val.decrypt(1, b"aad", &ct).unwrap();
+        assert_eq!(pt, b"hello");
+
+        let cipher_try: AeadCipher = key.as_slice().try_into().expect("TryFrom failed");
+        let pt2 = cipher_try.decrypt(1, b"aad", &ct).unwrap();
+        assert_eq!(pt2, b"hello");
     }
 }
 
