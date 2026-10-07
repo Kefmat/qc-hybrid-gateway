@@ -96,6 +96,19 @@ pub enum SessionState {
     Closed,
 }
 
+impl SessionState {
+    pub const fn is_active(&self) -> bool {
+        matches!(
+            self,
+            SessionState::Handshaking | SessionState::Established | SessionState::Rekeying
+        )
+    }
+
+    pub const fn is_terminal(&self) -> bool {
+        matches!(self, SessionState::Closed)
+    }
+}
+
 impl fmt::Display for SessionState {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -385,6 +398,16 @@ mod tests {
         assert_eq!(SessionState::Established.to_string(), "Established");
         assert_eq!(SessionState::Rekeying.to_string(), "Rekeying");
         assert_eq!(SessionState::Closed.to_string(), "Closed");
+
+        assert!(!SessionState::Uninitialized.is_active());
+        assert!(SessionState::Handshaking.is_active());
+        assert!(SessionState::Established.is_active());
+        assert!(SessionState::Rekeying.is_active());
+        assert!(!SessionState::Closed.is_active());
+
+        assert!(!SessionState::Uninitialized.is_terminal());
+        assert!(!SessionState::Established.is_terminal());
+        assert!(SessionState::Closed.is_terminal());
     }
 
     #[test]
