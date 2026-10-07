@@ -98,6 +98,14 @@ impl HandshakeInit {
     }
 }
 
+impl TryFrom<&[u8]> for HandshakeInit {
+    type Error = String;
+
+    fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
+        Self::from_bytes(bytes)
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct HandshakeResponse {
     pub ciphertext: HybridKemCiphertext,
@@ -191,6 +199,14 @@ impl HandshakeResponse {
     }
 }
 
+impl TryFrom<&[u8]> for HandshakeResponse {
+    type Error = String;
+
+    fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
+        Self::from_bytes(bytes)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -247,6 +263,24 @@ mod tests {
         let short = [0u8; 3];
         assert!(HandshakeInit::from_bytes(&short).is_err());
         assert!(HandshakeResponse::from_bytes(&short).is_err());
+    }
+
+    #[test]
+    fn test_handshake_try_from() {
+        let kem_keys = HybridKemKeyPair::generate();
+        let sig_keys = HybridSigKeyPair::generate();
+        let nonce = [1u8; HANDSHAKE_NONCE_SIZE];
+
+        let init = HandshakeInit::create(kem_keys.public_key.clone(), nonce, &sig_keys.secret_key);
+        let init_bytes = init.to_bytes();
+        let decoded_init: HandshakeInit = init_bytes.as_slice().try_into().expect("TryFrom HandshakeInit failed");
+        assert_eq!(init, decoded_init);
+
+        let (ct, _) = encapsulate_hybrid(&kem_keys.public_key);
+        let resp = HandshakeResponse::create(ct, nonce, &sig_keys.secret_key);
+        let resp_bytes = resp.to_bytes();
+        let decoded_resp: HandshakeResponse = resp_bytes.as_slice().try_into().expect("TryFrom HandshakeResponse failed");
+        assert_eq!(resp, decoded_resp);
     }
 }
 
