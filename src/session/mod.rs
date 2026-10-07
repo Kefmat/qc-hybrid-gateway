@@ -184,12 +184,28 @@ impl Session {
         self.state
     }
 
+    pub fn is_uninitialized(&self) -> bool {
+        self.state == SessionState::Uninitialized
+    }
+
+    pub fn is_handshaking(&self) -> bool {
+        self.state == SessionState::Handshaking
+    }
+
     pub fn is_established(&self) -> bool {
         self.state == SessionState::Established
     }
 
+    pub fn is_rekeying(&self) -> bool {
+        self.state == SessionState::Rekeying
+    }
+
     pub fn is_closed(&self) -> bool {
         self.state == SessionState::Closed
+    }
+
+    pub fn can_transmit(&self) -> bool {
+        self.state == SessionState::Established && self.tx_cipher.is_some()
     }
 
     pub fn tx_seq(&self) -> u64 {
@@ -345,13 +361,18 @@ mod tests {
         let client = Session::new_client();
         assert_eq!(client.role(), SessionRole::Client);
         assert_eq!(client.state(), SessionState::Uninitialized);
+        assert!(client.is_uninitialized());
+        assert!(!client.is_handshaking());
+        assert!(!client.is_rekeying());
         assert!(!client.is_established());
         assert!(!client.is_closed());
+        assert!(!client.can_transmit());
         assert_eq!(client.tx_seq(), 0);
 
         let server = Session::new_server();
         assert_eq!(server.role(), SessionRole::Server);
         assert_eq!(server.state(), SessionState::Uninitialized);
+        assert!(server.is_uninitialized());
     }
 
     #[test]
@@ -377,6 +398,8 @@ mod tests {
 
         assert!(client.is_established());
         assert!(server.is_established());
+        assert!(client.can_transmit());
+        assert!(server.can_transmit());
     }
 
     #[test]
