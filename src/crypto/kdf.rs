@@ -49,6 +49,15 @@ impl SessionKeys {
     }
 }
 
+impl std::fmt::Debug for SessionKeys {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SessionKeys")
+            .field("client_write_key", &"[REDACTED]")
+            .field("server_write_key", &"[REDACTED]")
+            .finish()
+    }
+}
+
 impl Drop for SessionKeys {
     fn drop(&mut self) {
         self.client_write_key.zeroize();
@@ -148,6 +157,16 @@ mod tests {
         let session_keys = SessionKeys::new(client_k, server_k);
         assert_eq!(session_keys.client_write_key, client_k);
         assert_eq!(session_keys.server_write_key, server_k);
+    }
+
+    #[test]
+    fn test_session_keys_debug_redaction() {
+        let session_keys = SessionKeys::new([0x11u8; 32], [0x22u8; 32]);
+        let debug_str = format!("{:?}", session_keys);
+        assert!(debug_str.contains("SessionKeys"));
+        assert!(debug_str.contains("[REDACTED]"));
+        assert!(!debug_str.contains("11"));
+        assert!(!debug_str.contains("22"));
     }
 }
 
