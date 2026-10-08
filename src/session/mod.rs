@@ -78,6 +78,23 @@ pub enum SessionRole {
     Server,
 }
 
+impl SessionRole {
+    pub const fn is_client(&self) -> bool {
+        matches!(self, SessionRole::Client)
+    }
+
+    pub const fn is_server(&self) -> bool {
+        matches!(self, SessionRole::Server)
+    }
+
+    pub const fn peer_role(&self) -> Self {
+        match self {
+            SessionRole::Client => SessionRole::Server,
+            SessionRole::Server => SessionRole::Client,
+        }
+    }
+}
+
 impl fmt::Display for SessionRole {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -624,6 +641,20 @@ mod tests {
         assert_eq!(slice, &[0xab; SESSION_ID_SIZE]);
         let array_ref: &[u8; SESSION_ID_SIZE] = custom_sid.as_ref();
         assert_eq!(array_ref, &[0xab; SESSION_ID_SIZE]);
+    }
+
+    #[test]
+    fn test_session_role_methods() {
+        let client = SessionRole::Client;
+        let server = SessionRole::Server;
+
+        assert!(client.is_client());
+        assert!(!client.is_server());
+        assert_eq!(client.peer_role(), SessionRole::Server);
+
+        assert!(server.is_server());
+        assert!(!server.is_client());
+        assert_eq!(server.peer_role(), SessionRole::Client);
     }
 }
 
