@@ -162,6 +162,21 @@ impl SessionMetrics {
     }
 }
 
+impl fmt::Display for SessionMetrics {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "SessionMetrics(tx_pkts={}, rx_pkts={}, tx_bytes={}, rx_bytes={}, dropped={}, rekeys={})",
+            self.tx_packets,
+            self.rx_packets,
+            self.tx_bytes,
+            self.rx_bytes,
+            self.replays_dropped,
+            self.rekeys_completed
+        )
+    }
+}
+
 pub struct Session {
     session_id: SessionId,
     role: SessionRole,
@@ -655,6 +670,23 @@ mod tests {
         assert!(server.is_server());
         assert!(!server.is_client());
         assert_eq!(server.peer_role(), SessionRole::Client);
+    }
+
+    #[test]
+    fn test_session_metrics_display() {
+        let metrics = SessionMetrics {
+            tx_packets: 10,
+            rx_packets: 20,
+            tx_bytes: 1000,
+            rx_bytes: 2000,
+            replays_dropped: 2,
+            rekeys_completed: 1,
+        };
+        let s = metrics.to_string();
+        assert_eq!(
+            s,
+            "SessionMetrics(tx_pkts=10, rx_pkts=20, tx_bytes=1000, rx_bytes=2000, dropped=2, rekeys=1)"
+        );
     }
 }
 
