@@ -36,6 +36,10 @@ impl FrameDecoder {
         self.buffer.len()
     }
 
+    pub fn buffer(&self) -> &[u8] {
+        &self.buffer
+    }
+
     pub fn is_empty(&self) -> bool {
         self.buffer.is_empty()
     }
@@ -81,6 +85,14 @@ impl FrameDecoder {
         let payload = self.buffer.split_to(payload_len).to_vec();
 
         Ok(Some(PacketFrame { header, payload }))
+    }
+
+    pub fn decode_all(&mut self) -> Result<Vec<PacketFrame>, String> {
+        let mut frames = Vec::new();
+        while let Some(frame) = self.decode_frame()? {
+            frames.push(frame);
+        }
+        Ok(frames)
     }
 }
 
@@ -167,5 +179,33 @@ mod tests {
         assert!(decoder.capacity() >= 2048);
         decoder.reserve(512);
         assert!(decoder.capacity() >= 2048);
+    }
+
+    #[test]
+    fn test_codec_buffer_accessor() {
+        let mut decoder = FrameDecoder::new();
+        assert_eq!(decoder.buffer(), &[] as &[u8]);
+        decoder.feed(b"raw-data-in-buffer");
+        assert_eq!(decoder.buffer(), b"raw-data-in-buffer");
+    }
+
+    #[test]
+    fn test_codec_decode_all() {
+        let mut decoder = FrameDecoder::new();
+        let frame1 = PacketFrame::new(PacketType::Data, 10, b"frame-1".to_vec()).unwrap();
+        let frame2 = PacketFrame::new(PacketType::Data, 11, b"frame-2".to_vec()).unwrap();
+        let frame3 = PacketFrame::new(PacketType::Ping, 12, b"frame-3".to_vec()).unwrap();
+
+        let mut data = frame1.encode();
+        data.extend_from_slice(&frame2.encode());
+        data.extend_from_slice(&frame3.encode());
+
+        decoder.feed(&data);
+        let frames = decoder.decode_all().expect("decode_all failed");
+        assert_eq!(frames.len(), 3);
+        assert_eq!(frames[0], frame1);
+        assert_eq!(frames[1], frame2);
+        assert_eq!(frames[2], frame3);
+        assert!(decoder.is_empty());
     }
 }
