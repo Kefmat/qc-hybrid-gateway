@@ -136,6 +136,18 @@ impl PacketHeader {
         })
     }
 
+    pub fn to_bytes(&self) -> [u8; HEADER_SIZE] {
+        self.encode()
+    }
+
+    pub fn total_frame_len(&self) -> usize {
+        HEADER_SIZE + self.payload_len as usize
+    }
+
+    pub const fn is_valid_version(&self) -> bool {
+        self.version == PROTOCOL_VERSION
+    }
+
     pub const fn is_handshake(&self) -> bool {
         self.packet_type.is_handshake()
     }
@@ -146,6 +158,22 @@ impl PacketHeader {
 
     pub const fn is_ping(&self) -> bool {
         self.packet_type.is_ping()
+    }
+}
+
+impl TryFrom<&[u8]> for PacketHeader {
+    type Error = String;
+
+    fn try_from(slice: &[u8]) -> Result<Self, Self::Error> {
+        Self::decode(slice)
+    }
+}
+
+impl TryFrom<[u8; HEADER_SIZE]> for PacketHeader {
+    type Error = String;
+
+    fn try_from(bytes: [u8; HEADER_SIZE]) -> Result<Self, Self::Error> {
+        Self::decode(&bytes)
     }
 }
 
@@ -481,6 +509,21 @@ mod tests {
         assert_eq!(filter.seen_count(), 0);
         // Can re-accept sequences starting fresh
         assert!(filter.check_and_update(100));
+    }
+
+    #[test]
+    fn test_packet_header_conversions_and_helpers() {
+        let header = PacketHeader::new(PacketType::Data, 55, 300).unwrap();
+        assert!(header.is_valid_version());
+        assert_eq!(header.total_frame_len(), HEADER_SIZE + 300);
+        assert_eq!(header.to_bytes(), header.encode());
+
+        let bytes = header.to_bytes();
+        let parsed_from_slice: PacketHeader = bytes.as_slice().try_into().expect("TryFrom slice failed");
+        assert_eq!(header, parsed_from_slice);
+
+        let parsed_from_array: PacketHeader = bytes.try_into().expect("TryFrom array failed");
+        assert_eq!(header, parsed_from_array);
     }
 }
 
