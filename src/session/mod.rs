@@ -72,6 +72,35 @@ impl AsRef<[u8; SESSION_ID_SIZE]> for SessionId {
     }
 }
 
+impl From<[u8; SESSION_ID_SIZE]> for SessionId {
+    fn from(bytes: [u8; SESSION_ID_SIZE]) -> Self {
+        Self::new(bytes)
+    }
+}
+
+impl From<&[u8; SESSION_ID_SIZE]> for SessionId {
+    fn from(bytes: &[u8; SESSION_ID_SIZE]) -> Self {
+        Self::new(*bytes)
+    }
+}
+
+impl TryFrom<&[u8]> for SessionId {
+    type Error = String;
+
+    fn try_from(slice: &[u8]) -> Result<Self, Self::Error> {
+        if slice.len() != SESSION_ID_SIZE {
+            return Err(format!(
+                "Invalid byte slice length for SessionId: expected {}, got {}",
+                SESSION_ID_SIZE,
+                slice.len()
+            ));
+        }
+        let mut bytes = [0u8; SESSION_ID_SIZE];
+        bytes.copy_from_slice(slice);
+        Ok(Self(bytes))
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SessionRole {
     Client,
@@ -255,6 +284,14 @@ impl Session {
 
     pub fn tx_seq(&self) -> u64 {
         self.tx_seq
+    }
+
+    pub fn rx_filter(&self) -> &AntiReplayFilter {
+        &self.rx_filter
+    }
+
+    pub fn rx_seen_count(&self) -> usize {
+        self.rx_filter.seen_count()
     }
 
     pub fn metrics(&self) -> &SessionMetrics {
@@ -656,6 +693,35 @@ mod tests {
         assert_eq!(slice, &[0xab; SESSION_ID_SIZE]);
         let array_ref: &[u8; SESSION_ID_SIZE] = custom_sid.as_ref();
         assert_eq!(array_ref, &[0xab; SESSION_ID_SIZE]);
+
+        // From / TryFrom checks
+        let from_arr: SessionId = [0xcd; SESSION_ID_SIZE].into();
+        assert_eq!(from_arr.as_bytes(), &[0xcd; SESSION_ID_SIZE]);
+        let from_arr_ref: SessionId = (&[0xef; SESSION_ID_SIZE]).into();
+        assert_eq!(from_arr_ref.as_bytes(), &[0xef; SESSION_ID_SIZE]);
+
+        let try_from_valid: SessionId = (&[0x12; SESSION_ID_SIZE][..]).try_into().unwrap();
+        assert_eq!(try_from_valid.as_bytes(), &[0x12; SESSION_ID_SIZE]);
+        let try_from_invalid: Result<SessionId, _> = (&[0x12; 8][..]).try_into();
+        assert!(try_from_invalid.is_err());
+    }
+
+    #[test]
+    fn test_session_rx_filter_accessors() {
+        let mut server = Session::new_server();
+        let mut client = Session::new_client();
+        let keys = SessionKeys::new([1u8; 32], [2u8; 32]);
+        server.establish(&keys).unwrap();
+        client.establish(&keys).unwrap();
+
+        assert_eq!(server.rx_seen_count(), 0);
+        assert_eq!(server.rx_filter().window_size(), DEFAULT_REPLAY_WINDOW_SIZE);
+
+        let frame = client.encrypt_packet(PacketType::Data, b"test-payload").unwrap();
+        server.decrypt_packet(&frame).unwrap();
+
+        assert_eq!(server.rx_seen_count(), 1);
+        assert_eq!(server.rx_filter().highest_seq(), 1);
     }
 
     #[test]
