@@ -86,6 +86,16 @@ pub struct HybridKemSecretKey {
     pub kyber_sk: KyberSecretKey,
 }
 
+impl HybridKemSecretKey {
+    pub fn x25519_sk(&self) -> &[u8; X25519_KEY_SIZE] {
+        &self.x25519_sk
+    }
+
+    pub fn kyber_sk(&self) -> &KyberSecretKey {
+        &self.kyber_sk
+    }
+}
+
 impl Drop for HybridKemSecretKey {
     fn drop(&mut self) {
         self.x25519_sk.zeroize();
@@ -232,6 +242,7 @@ pub fn decapsulate_hybrid(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use pqcrypto_traits::kem::SecretKey as _;
 
     #[test]
     fn test_public_key_serialization() {
@@ -294,6 +305,13 @@ mod tests {
         let ct_bytes = ct.to_bytes();
         let decoded_ct: HybridKemCiphertext = ct_bytes.as_slice().try_into().expect("TryFrom ct failed");
         assert_eq!(decoded_ct, ct);
+    }
+
+    #[test]
+    fn test_kem_secret_key_accessors() {
+        let pair = HybridKemKeyPair::generate();
+        assert_eq!(pair.secret_key.x25519_sk(), &pair.secret_key.x25519_sk);
+        assert_eq!(pair.secret_key.kyber_sk().as_bytes(), pair.secret_key.kyber_sk.as_bytes());
     }
 }
 

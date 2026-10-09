@@ -88,6 +88,16 @@ pub struct HybridSigSecretKey {
     pub dilithium_sk: DilithiumSecretKey,
 }
 
+impl HybridSigSecretKey {
+    pub fn ed25519_sk(&self) -> &[u8; ED25519_PUBLIC_KEY_SIZE] {
+        &self.ed25519_sk
+    }
+
+    pub fn dilithium_sk(&self) -> &DilithiumSecretKey {
+        &self.dilithium_sk
+    }
+}
+
 impl Drop for HybridSigSecretKey {
     fn drop(&mut self) {
         self.ed25519_sk.zeroize();
@@ -229,6 +239,7 @@ pub fn verify_hybrid(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use pqcrypto_traits::sign::SecretKey as _;
 
     #[test]
     fn test_public_key_serialization() {
@@ -295,6 +306,13 @@ mod tests {
         let sig_bytes = sig.to_bytes();
         let decoded_sig: HybridSignature = sig_bytes.as_slice().try_into().expect("TryFrom sig failed");
         assert_eq!(decoded_sig, sig);
+    }
+
+    #[test]
+    fn test_sig_secret_key_accessors() {
+        let pair = HybridSigKeyPair::generate();
+        assert_eq!(pair.secret_key.ed25519_sk(), &pair.secret_key.ed25519_sk);
+        assert_eq!(pair.secret_key.dilithium_sk().as_bytes(), pair.secret_key.dilithium_sk.as_bytes());
     }
 }
 
