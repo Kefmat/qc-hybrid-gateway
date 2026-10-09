@@ -171,6 +171,14 @@ impl PacketFrame {
         Ok(Self { header, payload })
     }
 
+    pub fn header(&self) -> &PacketHeader {
+        &self.header
+    }
+
+    pub fn version(&self) -> u8 {
+        self.header.version
+    }
+
     pub fn packet_type(&self) -> PacketType {
         self.header.packet_type
     }
@@ -190,7 +198,6 @@ impl PacketFrame {
     pub fn seq(&self) -> u64 {
         self.header.seq
     }
-
 
     pub fn payload_len(&self) -> usize {
         self.payload.len()
@@ -212,7 +219,6 @@ impl PacketFrame {
         self.payload.is_empty()
     }
 
-
     pub fn encode(&self) -> Vec<u8> {
         let mut buf = Vec::with_capacity(HEADER_SIZE + self.payload.len());
         buf.extend_from_slice(&self.header.encode());
@@ -231,6 +237,16 @@ impl PacketFrame {
         let payload = bytes[HEADER_SIZE..HEADER_SIZE + payload_len].to_vec();
 
         Ok(Self { header, payload })
+    }
+}
+
+impl fmt::Display for PacketFrame {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "PacketFrame({}, seq={}, len={})",
+            self.header.packet_type, self.header.seq, self.payload.len()
+        )
     }
 }
 
@@ -366,9 +382,10 @@ mod tests {
 
     #[test]
     fn test_packet_frame_accessors() {
-
         let frame = PacketFrame::new(PacketType::Data, 77, vec![1, 2, 3, 4]).unwrap();
         assert_eq!(frame.packet_type(), PacketType::Data);
+        assert_eq!(frame.version(), PROTOCOL_VERSION);
+        assert_eq!(frame.header().seq, 77);
         assert_eq!(frame.seq(), 77);
         assert_eq!(frame.payload_len(), 4);
         assert_eq!(frame.payload(), &[1, 2, 3, 4]);
@@ -383,8 +400,6 @@ mod tests {
         assert!(empty_frame.is_empty());
         assert_eq!(empty_frame.into_payload(), Vec::<u8>::new());
     }
-
-
 
     #[test]
     fn test_packet_frame_truncated() {
@@ -445,6 +460,9 @@ mod tests {
             header.to_string(),
             "PacketHeader(v1, Data, seq=42, len=128)"
         );
+
+        let frame = PacketFrame::new(PacketType::Data, 42, vec![1, 2, 3]).unwrap();
+        assert_eq!(frame.to_string(), "PacketFrame(Data, seq=42, len=3)");
     }
 
     #[test]
