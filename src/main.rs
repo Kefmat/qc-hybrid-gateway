@@ -293,15 +293,16 @@ fn main() {
             // 6. Graceful Teardown & Metrics
             client_session.close();
             server_session.close();
-            println!("[Step 5] Tunnel session closed gracefully.");
-            println!("    - Client Metrics: TX Packets={}, TX Bytes={}, RX Packets={}, RX Bytes={}",
-                client_session.metrics().tx_packets, client_session.metrics().tx_bytes,
-                client_session.metrics().rx_packets, client_session.metrics().rx_bytes
-            );
-            println!("    - Server Metrics: TX Packets={}, TX Bytes={}, RX Packets={}, RX Bytes={}",
-                server_session.metrics().tx_packets, server_session.metrics().tx_bytes,
-                server_session.metrics().rx_packets, server_session.metrics().rx_bytes
-            );
+            println!("    - Client: {}", client_session.metrics());
+            if let Some(avg) = client_session.metrics().average_packet_size() {
+                println!("      * Client Average Packet Size: {} bytes (Total: {} bytes, {} packets)",
+                    avg, client_session.metrics().total_bytes(), client_session.metrics().total_packets());
+            }
+            println!("    - Server: {}", server_session.metrics());
+            if let Some(avg) = server_session.metrics().average_packet_size() {
+                println!("      * Server Average Packet Size: {} bytes (Total: {} bytes, {} packets)",
+                    avg, server_session.metrics().total_bytes(), server_session.metrics().total_packets());
+            }
             println!("=== Tunnel Simulation Succeeded ===");
         }
     }

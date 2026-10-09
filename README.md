@@ -177,3 +177,4 @@ cargo run --release -- bench
 - **Transcript Binding**: All derived session keys are strictly bound to ephemeral exchange transcripts via HKDF-SHA256.
 - **Anti-Replay Window**: Uses configurable sliding-window bitmask verification (default window: 64 packets) to prevent packet replay attacks.
 - **Memory Safety & Invariants**: All frame lengths and header fields are strictly bounded by `MAX_FRAME_SIZE` (64 KB) with checked constructors.
+- **Real-time Telemetry & Diagnostics**: Tracks transmitted/received packets, payload throughput, average packet sizes, dropped replay packets, and rekey rotation counters.
