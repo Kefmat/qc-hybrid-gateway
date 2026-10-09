@@ -46,6 +46,18 @@ impl HandshakeInit {
         verify_hybrid(&signed_data, &self.signature, signer_pk)
     }
 
+    pub fn ephemeral_pk(&self) -> &HybridKemPublicKey {
+        &self.ephemeral_pk
+    }
+
+    pub fn nonce(&self) -> &[u8; HANDSHAKE_NONCE_SIZE] {
+        &self.nonce
+    }
+
+    pub fn signature(&self) -> &HybridSignature {
+        &self.signature
+    }
+
     pub fn encoded_len(&self) -> usize {
         4 + self.ephemeral_pk.encoded_len() + HANDSHAKE_NONCE_SIZE + 4 + self.signature.encoded_len()
     }
@@ -145,6 +157,18 @@ impl HandshakeResponse {
         let mut signed_data = self.ciphertext.to_bytes();
         signed_data.extend_from_slice(&self.nonce);
         verify_hybrid(&signed_data, &self.signature, signer_pk)
+    }
+
+    pub fn ciphertext(&self) -> &HybridKemCiphertext {
+        &self.ciphertext
+    }
+
+    pub fn nonce(&self) -> &[u8; HANDSHAKE_NONCE_SIZE] {
+        &self.nonce
+    }
+
+    pub fn signature(&self) -> &HybridSignature {
+        &self.signature
     }
 
     pub fn encoded_len(&self) -> usize {
@@ -281,6 +305,24 @@ mod tests {
         let resp_bytes = resp.to_bytes();
         let decoded_resp: HandshakeResponse = resp_bytes.as_slice().try_into().expect("TryFrom HandshakeResponse failed");
         assert_eq!(resp, decoded_resp);
+    }
+
+    #[test]
+    fn test_handshake_accessors() {
+        let kem_keys = HybridKemKeyPair::generate();
+        let sig_keys = HybridSigKeyPair::generate();
+        let nonce = [3u8; HANDSHAKE_NONCE_SIZE];
+
+        let init = HandshakeInit::create(kem_keys.public_key.clone(), nonce, &sig_keys.secret_key);
+        assert_eq!(init.ephemeral_pk(), &kem_keys.public_key);
+        assert_eq!(init.nonce(), &nonce);
+        assert_eq!(init.signature(), &init.signature);
+
+        let (ct, _) = encapsulate_hybrid(&kem_keys.public_key);
+        let resp = HandshakeResponse::create(ct.clone(), nonce, &sig_keys.secret_key);
+        assert_eq!(resp.ciphertext(), &ct);
+        assert_eq!(resp.nonce(), &nonce);
+        assert_eq!(resp.signature(), &resp.signature);
     }
 }
 
