@@ -27,6 +27,31 @@ pub enum ProtocolError {
     InvalidState(String),
 }
 
+impl ProtocolError {
+    pub const fn is_framing_error(&self) -> bool {
+        matches!(
+            self,
+            ProtocolError::BufferTooShort { .. }
+                | ProtocolError::InvalidVersion(_)
+                | ProtocolError::UnknownPacketType(_)
+                | ProtocolError::FrameTooLarge { .. }
+                | ProtocolError::PayloadTruncated { .. }
+        )
+    }
+
+    pub const fn is_replay(&self) -> bool {
+        matches!(self, ProtocolError::ReplayDetected(_))
+    }
+
+    pub const fn is_crypto_error(&self) -> bool {
+        matches!(self, ProtocolError::CryptoError(_))
+    }
+
+    pub const fn is_state_error(&self) -> bool {
+        matches!(self, ProtocolError::InvalidState(_))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -56,6 +81,39 @@ mod tests {
 
         let err = ProtocolError::InvalidState("Closed".to_string());
         assert_eq!(err.to_string(), "Invalid session state: Closed");
+    }
+
+    #[test]
+    fn test_protocol_error_predicates() {
+        let err_buf = ProtocolError::BufferTooShort { expected: 10, actual: 2 };
+        assert!(err_buf.is_framing_error());
+        assert!(!err_buf.is_replay());
+        assert!(!err_buf.is_crypto_error());
+        assert!(!err_buf.is_state_error());
+
+        let err_ver = ProtocolError::InvalidVersion(9);
+        assert!(err_ver.is_framing_error());
+
+        let err_type = ProtocolError::UnknownPacketType(0xEE);
+        assert!(err_type.is_framing_error());
+
+        let err_large = ProtocolError::FrameTooLarge { payload_len: 100000, max_limit: 65536 };
+        assert!(err_large.is_framing_error());
+
+        let err_trunc = ProtocolError::PayloadTruncated { expected: 50, actual: 10 };
+        assert!(err_trunc.is_framing_error());
+
+        let err_replay = ProtocolError::ReplayDetected(99);
+        assert!(err_replay.is_replay());
+        assert!(!err_replay.is_framing_error());
+
+        let err_crypto = ProtocolError::CryptoError("auth failure".into());
+        assert!(err_crypto.is_crypto_error());
+        assert!(!err_crypto.is_framing_error());
+
+        let err_state = ProtocolError::InvalidState("Uninitialized".into());
+        assert!(err_state.is_state_error());
+        assert!(!err_state.is_framing_error());
     }
 }
 
