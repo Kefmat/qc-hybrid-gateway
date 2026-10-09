@@ -2,8 +2,11 @@ use hkdf::Hkdf;
 use sha2::{Digest, Sha256};
 use zeroize::Zeroize;
 
-const KEM_SALT: &[u8] = b"PQC-HYBRID-GATEWAY-KEM-V1";
-const SESSION_SALT: &[u8] = b"PQC-HYBRID-GATEWAY-SESSION-V1";
+pub const KEM_SALT: &[u8] = b"PQC-HYBRID-GATEWAY-KEM-V1";
+pub const SESSION_SALT: &[u8] = b"PQC-HYBRID-GATEWAY-SESSION-V1";
+pub const KEM_INFO_LABEL: &[u8] = b"hybrid-kem-shared-secret";
+pub const CLIENT_KEY_INFO_PREFIX: &[u8] = b"client-write-key:";
+pub const SERVER_KEY_INFO_PREFIX: &[u8] = b"server-write-key:";
 
 pub fn hash_transcript(messages: &[&[u8]]) -> [u8; 32] {
     let mut hasher = Sha256::new();
@@ -20,7 +23,7 @@ pub fn derive_hybrid_shared_secret(classical_ss: &[u8], pq_ss: &[u8]) -> [u8; 32
 
     let hk = Hkdf::<Sha256>::new(Some(KEM_SALT), &ikm);
     let mut okm = [0u8; 32];
-    hk.expand(b"hybrid-kem-shared-secret", &mut okm)
+    hk.expand(KEM_INFO_LABEL, &mut okm)
         .expect("HKDF expansion failed");
 
     ikm.zeroize();
@@ -47,6 +50,17 @@ impl SessionKeys {
     pub fn server_write_key(&self) -> &[u8; 32] {
         &self.server_write_key
     }
+
+    pub fn rekey(&mut self, new_client_key: [u8; 32], new_server_key: [u8; 32]) {
+        self.zeroize_keys();
+        self.client_write_key = new_client_key;
+        self.server_write_key = new_server_key;
+    }
+
+    pub fn zeroize_keys(&mut self) {
+        self.client_write_key.zeroize();
+        self.server_write_key.zeroize();
+    }
 }
 
 impl std::fmt::Debug for SessionKeys {
@@ -71,12 +85,12 @@ pub fn derive_session_keys(master_shared_secret: &[u8; 32], transcript_hash: &[u
     let mut client_write_key = [0u8; 32];
     let mut server_write_key = [0u8; 32];
 
-    let mut client_info = Vec::from(b"client-write-key:");
+    let mut client_info = Vec::from(CLIENT_KEY_INFO_PREFIX);
     client_info.extend_from_slice(transcript_hash);
     hk.expand(&client_info, &mut client_write_key)
         .expect("HKDF expand client key failed");
 
-    let mut server_info = Vec::from(b"server-write-key:");
+    let mut server_info = Vec::from(SERVER_KEY_INFO_PREFIX);
     server_info.extend_from_slice(transcript_hash);
     hk.expand(&server_info, &mut server_write_key)
         .expect("HKDF expand server key failed");
@@ -167,6 +181,21 @@ mod tests {
         assert!(debug_str.contains("[REDACTED]"));
         assert!(!debug_str.contains("11"));
         assert!(!debug_str.contains("22"));
+    }
+
+    #[test]
+    fn test_session_keys_rekey_and_zeroize() {
+        let mut keys = SessionKeys::new([1u8; 32], [2u8; 32]);
+        assert_eq!(keys.client_write_key, [1u8; 32]);
+        assert_eq!(keys.server_write_key, [2u8; 32]);
+
+        keys.rekey([3u8; 32], [4u8; 32]);
+        assert_eq!(keys.client_write_key, [3u8; 32]);
+        assert_eq!(keys.server_write_key, [4u8; 32]);
+
+        keys.zeroize_keys();
+        assert_eq!(keys.client_write_key, [0u8; 32]);
+        assert_eq!(keys.server_write_key, [0u8; 32]);
     }
 }
 
