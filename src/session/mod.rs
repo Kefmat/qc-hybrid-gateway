@@ -189,6 +189,15 @@ impl SessionMetrics {
     pub fn has_dropped_packets(&self) -> bool {
         self.replays_dropped > 0
     }
+
+    pub fn average_packet_size(&self) -> Option<usize> {
+        let total_pkts = self.total_packets();
+        if total_pkts == 0 {
+            None
+        } else {
+            Some((self.total_bytes() / total_pkts) as usize)
+        }
+    }
 }
 
 impl fmt::Display for SessionMetrics {
@@ -280,6 +289,14 @@ impl Session {
 
     pub fn can_transmit(&self) -> bool {
         self.state == SessionState::Established && self.tx_cipher.is_some()
+    }
+
+    pub fn can_receive(&self) -> bool {
+        self.state == SessionState::Established && self.rx_cipher.is_some()
+    }
+
+    pub fn remaining_rekey_quota(&self) -> u64 {
+        self.rekey_threshold.saturating_sub(self.tx_seq)
     }
 
     pub fn tx_seq(&self) -> u64 {
@@ -753,6 +770,32 @@ mod tests {
             s,
             "SessionMetrics(tx_pkts=10, rx_pkts=20, tx_bytes=1000, rx_bytes=2000, dropped=2, rekeys=1)"
         );
+        assert_eq!(metrics.average_packet_size(), Some(100)); // (1000 + 2000) / (10 + 20) = 100
+
+        let empty_metrics = SessionMetrics::default();
+        assert_eq!(empty_metrics.average_packet_size(), None);
+    }
+
+    #[test]
+    fn test_session_can_receive_and_quota() {
+        let mut client = Session::new_client();
+        assert!(!client.can_receive());
+        assert!(!client.can_transmit());
+
+        let keys = SessionKeys::new([1u8; 32], [2u8; 32]);
+        client.establish(&keys).unwrap();
+        assert!(client.can_receive());
+        assert!(client.can_transmit());
+
+        client.set_rekey_threshold(100);
+        assert_eq!(client.remaining_rekey_quota(), 100);
+
+        client.encrypt_packet(PacketType::Data, b"data1").unwrap();
+        assert_eq!(client.remaining_rekey_quota(), 99);
+
+        client.close();
+        assert!(!client.can_receive());
+        assert!(!client.can_transmit());
     }
 }
 
