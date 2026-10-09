@@ -60,6 +60,21 @@ impl FrameDecoder {
         self.buffer.clear();
     }
 
+    pub fn next_frame_length(&self) -> Option<usize> {
+        if self.buffer.len() < HEADER_SIZE {
+            return None;
+        }
+        let header = PacketHeader::decode(&self.buffer[..HEADER_SIZE]).ok()?;
+        Some(HEADER_SIZE + header.payload_len as usize)
+    }
+
+    pub fn has_pending_frame(&self) -> bool {
+        match self.next_frame_length() {
+            Some(len) => self.buffer.len() >= len,
+            None => false,
+        }
+    }
+
     pub fn decode_frame(&mut self) -> Result<Option<PacketFrame>, String> {
         if self.buffer.len() < HEADER_SIZE {
             return Ok(None);
@@ -207,5 +222,30 @@ mod tests {
         assert_eq!(frames[1], frame2);
         assert_eq!(frames[2], frame3);
         assert!(decoder.is_empty());
+    }
+
+    #[test]
+    fn test_codec_pending_and_next_frame_length() {
+        let mut decoder = FrameDecoder::new();
+        assert_eq!(decoder.next_frame_length(), None);
+        assert!(!decoder.has_pending_frame());
+
+        let frame = PacketFrame::new(PacketType::Data, 7, b"payload123".to_vec()).unwrap();
+        let encoded = frame.encode();
+
+        // Feed only header
+        decoder.feed(&encoded[..HEADER_SIZE]);
+        assert_eq!(decoder.next_frame_length(), Some(encoded.len()));
+        assert!(!decoder.has_pending_frame());
+
+        // Feed the rest
+        decoder.feed(&encoded[HEADER_SIZE..]);
+        assert_eq!(decoder.next_frame_length(), Some(encoded.len()));
+        assert!(decoder.has_pending_frame());
+
+        let decoded = decoder.decode_frame().unwrap().unwrap();
+        assert_eq!(frame, decoded);
+        assert_eq!(decoder.next_frame_length(), None);
+        assert!(!decoder.has_pending_frame());
     }
 }
