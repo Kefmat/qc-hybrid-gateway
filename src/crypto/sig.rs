@@ -127,6 +127,14 @@ impl std::fmt::Debug for HybridSignature {
 
 
 impl HybridSignature {
+    pub fn ed25519_sig(&self) -> &[u8; ED25519_SIGNATURE_SIZE] {
+        &self.ed25519_sig
+    }
+
+    pub fn dilithium_sig(&self) -> &DilithiumSignature {
+        &self.dilithium_sig
+    }
+
     pub fn encoded_len(&self) -> usize {
         ED25519_SIGNATURE_SIZE + self.dilithium_sig.as_bytes().len()
     }
@@ -257,6 +265,14 @@ mod tests {
         let pair = HybridSigKeyPair::generate();
         assert_eq!(pair.public_key.ed25519_pk(), &pair.public_key.ed25519_pk);
         assert_eq!(pair.public_key.dilithium_pk().as_bytes(), pair.public_key.dilithium_pk.as_bytes());
+    }
+
+    #[test]
+    fn test_sig_signature_accessors() {
+        let pair = HybridSigKeyPair::generate();
+        let sig = sign_hybrid(b"test-accessors", &pair.secret_key);
+        assert_eq!(sig.ed25519_sig(), &sig.ed25519_sig);
+        assert_eq!(sig.dilithium_sig().as_bytes(), sig.dilithium_sig.as_bytes());
     }
 
     #[test]

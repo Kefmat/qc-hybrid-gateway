@@ -125,6 +125,14 @@ impl std::fmt::Debug for HybridKemCiphertext {
 
 
 impl HybridKemCiphertext {
+    pub fn x25519_ephemeral_pk(&self) -> &[u8; X25519_KEY_SIZE] {
+        &self.x25519_ephemeral_pk
+    }
+
+    pub fn kyber_ct(&self) -> &KyberCiphertext {
+        &self.kyber_ct
+    }
+
     pub fn encoded_len(&self) -> usize {
         X25519_KEY_SIZE + self.kyber_ct.as_bytes().len()
     }
@@ -256,6 +264,14 @@ mod tests {
         let pair = HybridKemKeyPair::generate();
         assert_eq!(pair.public_key.x25519_pk(), &pair.public_key.x25519_pk);
         assert_eq!(pair.public_key.kyber_pk().as_bytes(), pair.public_key.kyber_pk.as_bytes());
+    }
+
+    #[test]
+    fn test_kem_ciphertext_accessors() {
+        let pair = HybridKemKeyPair::generate();
+        let (ct, _) = encapsulate_hybrid(&pair.public_key);
+        assert_eq!(ct.x25519_ephemeral_pk(), &ct.x25519_ephemeral_pk);
+        assert_eq!(ct.kyber_ct().as_bytes(), ct.kyber_ct.as_bytes());
     }
 
     #[test]
