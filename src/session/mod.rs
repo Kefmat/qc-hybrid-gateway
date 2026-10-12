@@ -198,6 +198,10 @@ impl SessionMetrics {
             Some((self.total_bytes() / total_pkts) as usize)
         }
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.total_packets() == 0
+    }
 }
 
 impl fmt::Display for SessionMetrics {
@@ -263,6 +267,10 @@ impl Session {
         self.role
     }
 
+    pub fn peer_role(&self) -> SessionRole {
+        self.role.peer_role()
+    }
+
     pub fn state(&self) -> SessionState {
         self.state
     }
@@ -285,6 +293,14 @@ impl Session {
 
     pub fn is_closed(&self) -> bool {
         self.state == SessionState::Closed
+    }
+
+    pub fn is_active(&self) -> bool {
+        self.state.is_active()
+    }
+
+    pub fn is_terminal(&self) -> bool {
+        self.state.is_terminal()
     }
 
     pub fn can_transmit(&self) -> bool {
@@ -796,6 +812,39 @@ mod tests {
         client.close();
         assert!(!client.can_receive());
         assert!(!client.can_transmit());
+    }
+
+    #[test]
+    fn test_session_delegation_helpers() {
+        let mut client = Session::new_client();
+        assert_eq!(client.peer_role(), SessionRole::Server);
+        assert!(!client.is_active());
+        assert!(!client.is_terminal());
+
+        let server = Session::new_server();
+        assert_eq!(server.peer_role(), SessionRole::Client);
+
+        let keys = SessionKeys::new([1u8; 32], [2u8; 32]);
+        client.establish(&keys).unwrap();
+        assert!(client.is_active());
+        assert!(!client.is_terminal());
+
+        client.trigger_rekey().unwrap();
+        assert!(client.is_active());
+        assert!(!client.is_terminal());
+
+        client.close();
+        assert!(!client.is_active());
+        assert!(client.is_terminal());
+    }
+
+    #[test]
+    fn test_session_metrics_is_empty() {
+        let mut metrics = SessionMetrics::default();
+        assert!(metrics.is_empty());
+
+        metrics.tx_packets = 1;
+        assert!(!metrics.is_empty());
     }
 }
 
