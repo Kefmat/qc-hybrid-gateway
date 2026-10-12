@@ -159,6 +159,26 @@ impl PacketHeader {
     pub const fn is_ping(&self) -> bool {
         self.packet_type.is_ping()
     }
+
+    pub const fn is_empty(&self) -> bool {
+        self.payload_len == 0
+    }
+
+    pub fn data(seq: u64, payload_len: u32) -> Result<Self, String> {
+        Self::new(PacketType::Data, seq, payload_len)
+    }
+
+    pub fn ping(seq: u64) -> Result<Self, String> {
+        Self::new(PacketType::Ping, seq, 8)
+    }
+
+    pub fn handshake_init(seq: u64, payload_len: u32) -> Result<Self, String> {
+        Self::new(PacketType::HandshakeInit, seq, payload_len)
+    }
+
+    pub fn handshake_resp(seq: u64, payload_len: u32) -> Result<Self, String> {
+        Self::new(PacketType::HandshakeResp, seq, payload_len)
+    }
 }
 
 impl TryFrom<&[u8]> for PacketHeader {
@@ -237,6 +257,10 @@ impl PacketFrame {
 
     pub fn into_payload(self) -> Vec<u8> {
         self.payload
+    }
+
+    pub fn into_parts(self) -> (PacketHeader, Vec<u8>) {
+        (self.header, self.payload)
     }
 
     pub fn total_len(&self) -> usize {
@@ -524,6 +548,38 @@ mod tests {
 
         let parsed_from_array: PacketHeader = bytes.try_into().expect("TryFrom array failed");
         assert_eq!(header, parsed_from_array);
+    }
+
+    #[test]
+    fn test_packet_header_typed_constructors() {
+        let data_hdr = PacketHeader::data(10, 100).unwrap();
+        assert_eq!(data_hdr.packet_type, PacketType::Data);
+        assert_eq!(data_hdr.seq, 10);
+        assert_eq!(data_hdr.payload_len, 100);
+        assert!(!data_hdr.is_empty());
+
+        let empty_data = PacketHeader::data(11, 0).unwrap();
+        assert!(empty_data.is_empty());
+
+        let ping_hdr = PacketHeader::ping(12).unwrap();
+        assert_eq!(ping_hdr.packet_type, PacketType::Ping);
+        assert_eq!(ping_hdr.seq, 12);
+        assert_eq!(ping_hdr.payload_len, 8);
+
+        let init_hdr = PacketHeader::handshake_init(1, 200).unwrap();
+        assert_eq!(init_hdr.packet_type, PacketType::HandshakeInit);
+
+        let resp_hdr = PacketHeader::handshake_resp(2, 300).unwrap();
+        assert_eq!(resp_hdr.packet_type, PacketType::HandshakeResp);
+    }
+
+    #[test]
+    fn test_packet_frame_into_parts() {
+        let frame = PacketFrame::new(PacketType::Data, 99, vec![10, 20, 30]).unwrap();
+        let expected_header = frame.header().clone();
+        let (hdr, payload) = frame.into_parts();
+        assert_eq!(hdr, expected_header);
+        assert_eq!(payload, vec![10, 20, 30]);
     }
 }
 
