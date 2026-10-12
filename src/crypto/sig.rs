@@ -83,6 +83,18 @@ impl TryFrom<&[u8]> for HybridSigPublicKey {
     }
 }
 
+impl From<&HybridSigPublicKey> for Vec<u8> {
+    fn from(pk: &HybridSigPublicKey) -> Self {
+        pk.to_bytes()
+    }
+}
+
+impl From<HybridSigPublicKey> for Vec<u8> {
+    fn from(pk: HybridSigPublicKey) -> Self {
+        pk.to_bytes()
+    }
+}
+
 pub struct HybridSigSecretKey {
     pub ed25519_sk: [u8; ED25519_PUBLIC_KEY_SIZE],
     pub dilithium_sk: DilithiumSecretKey,
@@ -179,6 +191,18 @@ impl TryFrom<&[u8]> for HybridSignature {
 
     fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
         Self::from_bytes(bytes)
+    }
+}
+
+impl From<&HybridSignature> for Vec<u8> {
+    fn from(sig: &HybridSignature) -> Self {
+        sig.to_bytes()
+    }
+}
+
+impl From<HybridSignature> for Vec<u8> {
+    fn from(sig: HybridSignature) -> Self {
+        sig.to_bytes()
     }
 }
 
@@ -313,6 +337,25 @@ mod tests {
         let pair = HybridSigKeyPair::generate();
         assert_eq!(pair.secret_key.ed25519_sk(), &pair.secret_key.ed25519_sk);
         assert_eq!(pair.secret_key.dilithium_sk().as_bytes(), pair.secret_key.dilithium_sk.as_bytes());
+    }
+
+    #[test]
+    fn test_sig_from_into_vec() {
+        let pair = HybridSigKeyPair::generate();
+        let pk_ref_vec: Vec<u8> = (&pair.public_key).into();
+        assert_eq!(pk_ref_vec, pair.public_key.to_bytes());
+
+        let pk_owned = pair.public_key.clone();
+        let pk_vec: Vec<u8> = pk_owned.into();
+        assert_eq!(pk_vec, pair.public_key.to_bytes());
+
+        let sig = sign_hybrid(b"test-into-vec-signature", &pair.secret_key);
+        let sig_ref_vec: Vec<u8> = (&sig).into();
+        assert_eq!(sig_ref_vec, sig.to_bytes());
+
+        let sig_owned = sig.clone();
+        let sig_vec: Vec<u8> = sig_owned.into();
+        assert_eq!(sig_vec, sig.to_bytes());
     }
 }
 

@@ -81,6 +81,18 @@ impl TryFrom<&[u8]> for HybridKemPublicKey {
     }
 }
 
+impl From<&HybridKemPublicKey> for Vec<u8> {
+    fn from(pk: &HybridKemPublicKey) -> Self {
+        pk.to_bytes()
+    }
+}
+
+impl From<HybridKemPublicKey> for Vec<u8> {
+    fn from(pk: HybridKemPublicKey) -> Self {
+        pk.to_bytes()
+    }
+}
+
 pub struct HybridKemSecretKey {
     pub x25519_sk: [u8; X25519_KEY_SIZE],
     pub kyber_sk: KyberSecretKey,
@@ -177,6 +189,18 @@ impl TryFrom<&[u8]> for HybridKemCiphertext {
 
     fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
         Self::from_bytes(bytes)
+    }
+}
+
+impl From<&HybridKemCiphertext> for Vec<u8> {
+    fn from(ct: &HybridKemCiphertext) -> Self {
+        ct.to_bytes()
+    }
+}
+
+impl From<HybridKemCiphertext> for Vec<u8> {
+    fn from(ct: HybridKemCiphertext) -> Self {
+        ct.to_bytes()
     }
 }
 
@@ -312,6 +336,25 @@ mod tests {
         let pair = HybridKemKeyPair::generate();
         assert_eq!(pair.secret_key.x25519_sk(), &pair.secret_key.x25519_sk);
         assert_eq!(pair.secret_key.kyber_sk().as_bytes(), pair.secret_key.kyber_sk.as_bytes());
+    }
+
+    #[test]
+    fn test_kem_from_into_vec() {
+        let pair = HybridKemKeyPair::generate();
+        let pk_ref_vec: Vec<u8> = (&pair.public_key).into();
+        assert_eq!(pk_ref_vec, pair.public_key.to_bytes());
+
+        let pk_owned = pair.public_key.clone();
+        let pk_vec: Vec<u8> = pk_owned.into();
+        assert_eq!(pk_vec, pair.public_key.to_bytes());
+
+        let (ct, _) = encapsulate_hybrid(&pair.public_key);
+        let ct_ref_vec: Vec<u8> = (&ct).into();
+        assert_eq!(ct_ref_vec, ct.to_bytes());
+
+        let ct_owned = ct.clone();
+        let ct_vec: Vec<u8> = ct_owned.into();
+        assert_eq!(ct_vec, ct.to_bytes());
     }
 }
 
