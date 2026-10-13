@@ -35,6 +35,20 @@ impl AeadCipher {
         NONCE_SIZE
     }
 
+    /// Computes the expected ciphertext length for a given plaintext length including the authentication tag.
+    pub const fn ciphertext_len(plaintext_len: usize) -> usize {
+        plaintext_len + TAG_SIZE
+    }
+
+    /// Computes the plaintext length for a given ciphertext length, returning `None` if the ciphertext is shorter than the authentication tag.
+    pub const fn plaintext_len(ciphertext_len: usize) -> Option<usize> {
+        if ciphertext_len >= TAG_SIZE {
+            Some(ciphertext_len - TAG_SIZE)
+        } else {
+            None
+        }
+    }
+
     /// Creates a new cipher instance initialized with a 32-byte key.
     pub fn new(key_bytes: &[u8; KEY_SIZE]) -> Self {
         let key = Key::from_slice(key_bytes);
@@ -61,6 +75,21 @@ impl AeadCipher {
     pub fn rekey(&mut self, new_key_bytes: &[u8; KEY_SIZE]) {
         let key = Key::from_slice(new_key_bytes);
         self.cipher = ChaCha20Poly1305::new(key);
+    }
+
+    /// Re-keys the cipher instance from a byte slice, validating that its length matches KEY_SIZE.
+    pub fn rekey_from_slice(&mut self, new_key_bytes: &[u8]) -> Result<(), String> {
+        if new_key_bytes.len() != KEY_SIZE {
+            return Err(format!(
+                "Invalid AEAD key length for rekey: expected {} bytes, got {}",
+                KEY_SIZE,
+                new_key_bytes.len()
+            ));
+        }
+        let mut key = [0u8; KEY_SIZE];
+        key.copy_from_slice(new_key_bytes);
+        self.rekey(&key);
+        Ok(())
     }
 
 
@@ -114,6 +143,17 @@ impl TryFrom<&[u8]> for AeadCipher {
 
     fn try_from(slice: &[u8]) -> Result<Self, Self::Error> {
         Self::from_slice(slice)
+    }
+}
+
+impl std::fmt::Debug for AeadCipher {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AeadCipher")
+            .field("algorithm", &"ChaCha20Poly1305")
+            .field("key_size", &KEY_SIZE)
+            .field("tag_size", &TAG_SIZE)
+            .field("nonce_size", &NONCE_SIZE)
+            .finish()
     }
 }
 
@@ -216,6 +256,39 @@ mod tests {
         let cipher_try: AeadCipher = key.as_slice().try_into().expect("TryFrom failed");
         let pt2 = cipher_try.decrypt(1, b"aad", &ct).unwrap();
         assert_eq!(pt2, b"hello");
+    }
+
+    #[test]
+    fn test_aead_cipher_debug() {
+        let key = [0x42u8; KEY_SIZE];
+        let cipher = AeadCipher::new(&key);
+        let debug_str = format!("{:?}", cipher);
+        assert!(debug_str.contains("AeadCipher"));
+        assert!(debug_str.contains("ChaCha20Poly1305"));
+        assert!(debug_str.contains("tag_size: 16"));
+    }
+
+    #[test]
+    fn test_aead_cipher_length_helpers() {
+        assert_eq!(AeadCipher::ciphertext_len(0), TAG_SIZE);
+        assert_eq!(AeadCipher::ciphertext_len(100), 100 + TAG_SIZE);
+
+        assert_eq!(AeadCipher::plaintext_len(TAG_SIZE), Some(0));
+        assert_eq!(AeadCipher::plaintext_len(TAG_SIZE + 50), Some(50));
+        assert_eq!(AeadCipher::plaintext_len(TAG_SIZE - 1), None);
+        assert_eq!(AeadCipher::plaintext_len(0), None);
+    }
+
+    #[test]
+    fn test_aead_rekey_from_slice() {
+        let key1 = [0x11u8; KEY_SIZE];
+        let key2 = [0x22u8; KEY_SIZE];
+        let mut cipher = AeadCipher::new(&key1);
+
+        assert!(cipher.rekey_from_slice(&key2).is_ok());
+
+        let bad_key = [0x33u8; 20];
+        assert!(cipher.rekey_from_slice(&bad_key).is_err());
     }
 }
 
