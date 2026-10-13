@@ -1,3 +1,5 @@
+use std::fmt;
+
 use crate::crypto::{
     kem::{HybridKemCiphertext, HybridKemPublicKey},
     sig::{sign_hybrid, verify_hybrid, HybridSigPublicKey, HybridSigSecretKey, HybridSignature},
@@ -40,10 +42,18 @@ impl HandshakeInit {
         }
     }
 
-    pub fn verify(&self, signer_pk: &HybridSigPublicKey) -> bool {
+    pub fn signed_payload(&self) -> Vec<u8> {
         let mut signed_data = self.ephemeral_pk.to_bytes();
         signed_data.extend_from_slice(&self.nonce);
-        verify_hybrid(&signed_data, &self.signature, signer_pk)
+        signed_data
+    }
+
+    pub fn verify(&self, signer_pk: &HybridSigPublicKey) -> bool {
+        verify_hybrid(&self.signed_payload(), &self.signature, signer_pk)
+    }
+
+    pub fn into_parts(self) -> (HybridKemPublicKey, [u8; HANDSHAKE_NONCE_SIZE], HybridSignature) {
+        (self.ephemeral_pk, self.nonce, self.signature)
     }
 
     pub fn ephemeral_pk(&self) -> &HybridKemPublicKey {
@@ -118,6 +128,17 @@ impl TryFrom<&[u8]> for HandshakeInit {
     }
 }
 
+impl fmt::Display for HandshakeInit {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "HandshakeInit(pk_len={}, sig_len={})",
+            self.ephemeral_pk.encoded_len(),
+            self.signature.encoded_len()
+        )
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct HandshakeResponse {
     pub ciphertext: HybridKemCiphertext,
@@ -153,10 +174,18 @@ impl HandshakeResponse {
         }
     }
 
-    pub fn verify(&self, signer_pk: &HybridSigPublicKey) -> bool {
+    pub fn signed_payload(&self) -> Vec<u8> {
         let mut signed_data = self.ciphertext.to_bytes();
         signed_data.extend_from_slice(&self.nonce);
-        verify_hybrid(&signed_data, &self.signature, signer_pk)
+        signed_data
+    }
+
+    pub fn verify(&self, signer_pk: &HybridSigPublicKey) -> bool {
+        verify_hybrid(&self.signed_payload(), &self.signature, signer_pk)
+    }
+
+    pub fn into_parts(self) -> (HybridKemCiphertext, [u8; HANDSHAKE_NONCE_SIZE], HybridSignature) {
+        (self.ciphertext, self.nonce, self.signature)
     }
 
     pub fn ciphertext(&self) -> &HybridKemCiphertext {
@@ -228,6 +257,17 @@ impl TryFrom<&[u8]> for HandshakeResponse {
 
     fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
         Self::from_bytes(bytes)
+    }
+}
+
+impl fmt::Display for HandshakeResponse {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "HandshakeResponse(ct_len={}, sig_len={})",
+            self.ciphertext.encoded_len(),
+            self.signature.encoded_len()
+        )
     }
 }
 
@@ -323,6 +363,50 @@ mod tests {
         assert_eq!(resp.ciphertext(), &ct);
         assert_eq!(resp.nonce(), &nonce);
         assert_eq!(resp.signature(), &resp.signature);
+    }
+
+    #[test]
+    fn test_handshake_display_and_into_parts() {
+        let kem_keys = HybridKemKeyPair::generate();
+        let sig_keys = HybridSigKeyPair::generate();
+        let nonce = [4u8; HANDSHAKE_NONCE_SIZE];
+
+        let init = HandshakeInit::create(kem_keys.public_key.clone(), nonce, &sig_keys.secret_key);
+        let init_str = init.to_string();
+        assert!(init_str.contains("HandshakeInit"));
+        assert!(init_str.contains("pk_len="));
+
+        let (pk, n, sig) = init.clone().into_parts();
+        assert_eq!(pk, kem_keys.public_key);
+        assert_eq!(n, nonce);
+        assert_eq!(sig, init.signature);
+
+        let (ct, _) = encapsulate_hybrid(&kem_keys.public_key);
+        let resp = HandshakeResponse::create(ct.clone(), nonce, &sig_keys.secret_key);
+        let resp_str = resp.to_string();
+        assert!(resp_str.contains("HandshakeResponse"));
+        assert!(resp_str.contains("ct_len="));
+
+        let (resp_ct, resp_n, resp_sig) = resp.clone().into_parts();
+        assert_eq!(resp_ct, ct);
+        assert_eq!(resp_n, nonce);
+        assert_eq!(resp_sig, resp.signature);
+    }
+
+    #[test]
+    fn test_handshake_signed_payload() {
+        let kem_keys = HybridKemKeyPair::generate();
+        let sig_keys = HybridSigKeyPair::generate();
+        let nonce = [5u8; HANDSHAKE_NONCE_SIZE];
+
+        let init = HandshakeInit::create(kem_keys.public_key.clone(), nonce, &sig_keys.secret_key);
+        let payload = init.signed_payload();
+        assert_eq!(payload.len(), kem_keys.public_key.to_bytes().len() + HANDSHAKE_NONCE_SIZE);
+
+        let (ct, _) = encapsulate_hybrid(&kem_keys.public_key);
+        let resp = HandshakeResponse::create(ct.clone(), nonce, &sig_keys.secret_key);
+        let resp_payload = resp.signed_payload();
+        assert_eq!(resp_payload.len(), ct.to_bytes().len() + HANDSHAKE_NONCE_SIZE);
     }
 }
 
