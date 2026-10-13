@@ -47,8 +47,25 @@ impl SessionKeys {
         &self.client_write_key
     }
 
+    pub fn client_write_key_mut(&mut self) -> &mut [u8; 32] {
+        &mut self.client_write_key
+    }
+
     pub fn server_write_key(&self) -> &[u8; 32] {
         &self.server_write_key
+    }
+
+    pub fn server_write_key_mut(&mut self) -> &mut [u8; 32] {
+        &mut self.server_write_key
+    }
+
+    pub fn is_zeroized(&self) -> bool {
+        self.client_write_key == [0u8; 32] && self.server_write_key == [0u8; 32]
+    }
+
+    pub fn matches(&self, other: &SessionKeys) -> bool {
+        self.client_write_key == other.client_write_key
+            && self.server_write_key == other.server_write_key
     }
 
     pub fn rekey(&mut self, new_client_key: [u8; 32], new_server_key: [u8; 32]) {
@@ -196,6 +213,28 @@ mod tests {
         keys.zeroize_keys();
         assert_eq!(keys.client_write_key, [0u8; 32]);
         assert_eq!(keys.server_write_key, [0u8; 32]);
+    }
+
+    #[test]
+    fn test_session_keys_is_zeroized_and_matches() {
+        let keys1 = SessionKeys::new([1u8; 32], [2u8; 32]);
+        let keys2 = SessionKeys::new([1u8; 32], [2u8; 32]);
+        let keys3 = SessionKeys::new([3u8; 32], [4u8; 32]);
+
+        assert!(keys1.matches(&keys2));
+        assert!(!keys1.matches(&keys3));
+        assert!(!keys1.is_zeroized());
+
+        let zero_keys = SessionKeys::new([0u8; 32], [0u8; 32]);
+        assert!(zero_keys.is_zeroized());
+
+        let mut keys_to_zero = SessionKeys::new([1u8; 32], [2u8; 32]);
+        keys_to_zero.zeroize_keys();
+        assert!(keys_to_zero.is_zeroized());
+
+        let mut mutable_keys = SessionKeys::new([1u8; 32], [2u8; 32]);
+        *mutable_keys.client_write_key_mut() = [5u8; 32];
+        assert_eq!(mutable_keys.client_write_key(), &[5u8; 32]);
     }
 }
 
