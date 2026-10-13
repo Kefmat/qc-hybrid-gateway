@@ -199,8 +199,36 @@ impl SessionMetrics {
         }
     }
 
+    pub fn has_traffic(&self) -> bool {
+        self.total_packets() > 0
+    }
+
     pub fn is_empty(&self) -> bool {
         self.total_packets() == 0
+    }
+
+    pub fn combine(&mut self, other: &SessionMetrics) {
+        self.tx_packets = self.tx_packets.saturating_add(other.tx_packets);
+        self.rx_packets = self.rx_packets.saturating_add(other.rx_packets);
+        self.tx_bytes = self.tx_bytes.saturating_add(other.tx_bytes);
+        self.rx_bytes = self.rx_bytes.saturating_add(other.rx_bytes);
+        self.replays_dropped = self.replays_dropped.saturating_add(other.replays_dropped);
+        self.rekeys_completed = self.rekeys_completed.saturating_add(other.rekeys_completed);
+    }
+}
+
+impl std::ops::Add for SessionMetrics {
+    type Output = Self;
+
+    fn add(mut self, rhs: Self) -> Self::Output {
+        self.combine(&rhs);
+        self
+    }
+}
+
+impl std::ops::AddAssign for SessionMetrics {
+    fn add_assign(&mut self, rhs: Self) {
+        self.combine(&rhs);
     }
 }
 
@@ -313,6 +341,25 @@ impl Session {
 
     pub fn remaining_rekey_quota(&self) -> u64 {
         self.rekey_threshold.saturating_sub(self.tx_seq)
+    }
+
+    pub fn is_rekey_imminent(&self, margin: u64) -> bool {
+        self.remaining_rekey_quota() <= margin
+    }
+
+    pub fn rekey_progress_ratio(&self) -> f64 {
+        if self.rekey_threshold == 0 {
+            1.0
+        } else {
+            (self.tx_seq as f64 / self.rekey_threshold as f64).min(1.0)
+        }
+    }
+
+    pub fn summary(&self) -> String {
+        format!(
+            "Session({}, role={}, state={}, tx_seq={})",
+            self.session_id, self.role, self.state, self.tx_seq
+        )
     }
 
     pub fn tx_seq(&self) -> u64 {
@@ -842,9 +889,77 @@ mod tests {
     fn test_session_metrics_is_empty() {
         let mut metrics = SessionMetrics::default();
         assert!(metrics.is_empty());
+        assert!(!metrics.has_traffic());
 
         metrics.tx_packets = 1;
         assert!(!metrics.is_empty());
+        assert!(metrics.has_traffic());
+    }
+
+    #[test]
+    fn test_session_metrics_combine_and_ops() {
+        let m1 = SessionMetrics {
+            tx_packets: 10,
+            rx_packets: 5,
+            tx_bytes: 500,
+            rx_bytes: 250,
+            replays_dropped: 1,
+            rekeys_completed: 1,
+        };
+        let m2 = SessionMetrics {
+            tx_packets: 20,
+            rx_packets: 15,
+            tx_bytes: 1000,
+            rx_bytes: 750,
+            replays_dropped: 2,
+            rekeys_completed: 1,
+        };
+
+        let mut combined = m1.clone();
+        combined.combine(&m2);
+        assert_eq!(combined.tx_packets, 30);
+        assert_eq!(combined.rx_packets, 20);
+        assert_eq!(combined.tx_bytes, 1500);
+        assert_eq!(combined.rx_bytes, 1000);
+        assert_eq!(combined.replays_dropped, 3);
+        assert_eq!(combined.rekeys_completed, 2);
+
+        // Test std::ops::Add
+        let added = m1.clone() + m2.clone();
+        assert_eq!(added, combined);
+
+        // Test std::ops::AddAssign
+        let mut assign_test = m1;
+        assign_test += m2;
+        assert_eq!(assign_test, combined);
+    }
+
+    #[test]
+    fn test_session_rekey_imminent_and_summary() {
+        let mut client = Session::new_client();
+        let keys = SessionKeys::new([1u8; 32], [2u8; 32]);
+        client.establish(&keys).unwrap();
+
+        client.set_rekey_threshold(10);
+        assert_eq!(client.remaining_rekey_quota(), 10);
+        assert_eq!(client.rekey_progress_ratio(), 0.0);
+        assert!(!client.is_rekey_imminent(2));
+
+        for _ in 0..8 {
+            client.encrypt_packet(PacketType::Data, b"pkt").unwrap();
+        }
+
+        assert_eq!(client.tx_seq(), 8);
+        assert_eq!(client.remaining_rekey_quota(), 2);
+        assert_eq!(client.rekey_progress_ratio(), 0.8);
+        assert!(client.is_rekey_imminent(2));
+        assert!(client.is_rekey_imminent(5));
+
+        let summary = client.summary();
+        assert!(summary.contains("Session("));
+        assert!(summary.contains("role=Client"));
+        assert!(summary.contains("state=Established"));
+        assert!(summary.contains("tx_seq=8"));
     }
 }
 
