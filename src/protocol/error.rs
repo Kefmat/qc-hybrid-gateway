@@ -1,4 +1,24 @@
+use std::fmt;
 use thiserror::Error;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ErrorKind {
+    Framing,
+    Replay,
+    Crypto,
+    State,
+}
+
+impl fmt::Display for ErrorKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ErrorKind::Framing => write!(f, "Framing"),
+            ErrorKind::Replay => write!(f, "Replay"),
+            ErrorKind::Crypto => write!(f, "Crypto"),
+            ErrorKind::State => write!(f, "State"),
+        }
+    }
+}
 
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
 pub enum ProtocolError {
@@ -28,27 +48,72 @@ pub enum ProtocolError {
 }
 
 impl ProtocolError {
-    pub const fn is_framing_error(&self) -> bool {
-        matches!(
-            self,
+    pub const fn kind(&self) -> ErrorKind {
+        match self {
             ProtocolError::BufferTooShort { .. }
-                | ProtocolError::InvalidVersion(_)
-                | ProtocolError::UnknownPacketType(_)
-                | ProtocolError::FrameTooLarge { .. }
-                | ProtocolError::PayloadTruncated { .. }
-        )
+            | ProtocolError::InvalidVersion(_)
+            | ProtocolError::UnknownPacketType(_)
+            | ProtocolError::FrameTooLarge { .. }
+            | ProtocolError::PayloadTruncated { .. } => ErrorKind::Framing,
+            ProtocolError::ReplayDetected(_) => ErrorKind::Replay,
+            ProtocolError::CryptoError(_) => ErrorKind::Crypto,
+            ProtocolError::InvalidState(_) => ErrorKind::State,
+        }
     }
 
-    pub const fn is_replay(&self) -> bool {
+    pub fn buffer_too_short(expected: usize, actual: usize) -> Self {
+        Self::BufferTooShort { expected, actual }
+    }
+
+    pub fn invalid_version(version: u8) -> Self {
+        Self::InvalidVersion(version)
+    }
+
+    pub fn unknown_packet_type(packet_type: u8) -> Self {
+        Self::UnknownPacketType(packet_type)
+    }
+
+    pub fn frame_too_large(payload_len: usize, max_limit: usize) -> Self {
+        Self::FrameTooLarge {
+            payload_len,
+            max_limit,
+        }
+    }
+
+    pub fn payload_truncated(expected: usize, actual: usize) -> Self {
+        Self::PayloadTruncated { expected, actual }
+    }
+
+    pub fn replay_detected(seq: u64) -> Self {
+        Self::ReplayDetected(seq)
+    }
+
+    pub fn crypto_error(msg: impl Into<String>) -> Self {
+        Self::CryptoError(msg.into())
+    }
+
+    pub fn invalid_state(msg: impl Into<String>) -> Self {
+        Self::InvalidState(msg.into())
+    }
+
+    pub const fn is_recoverable(&self) -> bool {
         matches!(self, ProtocolError::ReplayDetected(_))
     }
 
+    pub const fn is_framing_error(&self) -> bool {
+        matches!(self.kind(), ErrorKind::Framing)
+    }
+
+    pub const fn is_replay(&self) -> bool {
+        matches!(self.kind(), ErrorKind::Replay)
+    }
+
     pub const fn is_crypto_error(&self) -> bool {
-        matches!(self, ProtocolError::CryptoError(_))
+        matches!(self.kind(), ErrorKind::Crypto)
     }
 
     pub const fn is_state_error(&self) -> bool {
-        matches!(self, ProtocolError::InvalidState(_))
+        matches!(self.kind(), ErrorKind::State)
     }
 }
 
@@ -114,6 +179,45 @@ mod tests {
         let err_state = ProtocolError::InvalidState("Uninitialized".into());
         assert!(err_state.is_state_error());
         assert!(!err_state.is_framing_error());
+    }
+
+    #[test]
+    fn test_error_kind_display() {
+        assert_eq!(ErrorKind::Framing.to_string(), "Framing");
+        assert_eq!(ErrorKind::Replay.to_string(), "Replay");
+        assert_eq!(ErrorKind::Crypto.to_string(), "Crypto");
+        assert_eq!(ErrorKind::State.to_string(), "State");
+    }
+
+    #[test]
+    fn test_protocol_error_constructors_and_kind() {
+        let err_buf = ProtocolError::buffer_too_short(20, 5);
+        assert_eq!(err_buf.kind(), ErrorKind::Framing);
+        assert!(!err_buf.is_recoverable());
+
+        let err_ver = ProtocolError::invalid_version(3);
+        assert_eq!(err_ver.kind(), ErrorKind::Framing);
+
+        let err_type = ProtocolError::unknown_packet_type(0xAB);
+        assert_eq!(err_type.kind(), ErrorKind::Framing);
+
+        let err_large = ProtocolError::frame_too_large(1000, 500);
+        assert_eq!(err_large.kind(), ErrorKind::Framing);
+
+        let err_trunc = ProtocolError::payload_truncated(100, 20);
+        assert_eq!(err_trunc.kind(), ErrorKind::Framing);
+
+        let err_replay = ProtocolError::replay_detected(42);
+        assert_eq!(err_replay.kind(), ErrorKind::Replay);
+        assert!(err_replay.is_recoverable());
+
+        let err_crypto = ProtocolError::crypto_error("decrypt failed");
+        assert_eq!(err_crypto.kind(), ErrorKind::Crypto);
+        assert!(!err_crypto.is_recoverable());
+
+        let err_state = ProtocolError::invalid_state("closed");
+        assert_eq!(err_state.kind(), ErrorKind::State);
+        assert!(!err_state.is_recoverable());
     }
 }
 
