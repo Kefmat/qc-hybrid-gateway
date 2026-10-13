@@ -32,6 +32,11 @@ impl FrameDecoder {
         self.buffer.extend_from_slice(data);
     }
 
+    /// Feeds an already encoded `PacketFrame` directly into the decoder buffer.
+    pub fn feed_frame(&mut self, frame: &PacketFrame) {
+        self.feed(&frame.encode());
+    }
+
     pub fn buffer_len(&self) -> usize {
         self.buffer.len()
     }
@@ -56,6 +61,11 @@ impl FrameDecoder {
         self.buffer.reserve(additional);
     }
 
+    /// Clears the buffer and resets its capacity to `max_frame_size`.
+    pub fn reset(&mut self) {
+        self.buffer = BytesMut::with_capacity(self.max_frame_size);
+    }
+
     pub fn clear(&mut self) {
         self.buffer.clear();
     }
@@ -66,6 +76,28 @@ impl FrameDecoder {
         }
         let header = PacketHeader::decode(&self.buffer[..HEADER_SIZE]).ok()?;
         Some(HEADER_SIZE + header.payload_len as usize)
+    }
+
+    /// Returns the number of additional bytes needed to complete decoding the pending frame,
+    /// or `None` if not even the header (`HEADER_SIZE` bytes) has been received yet.
+    pub fn remaining_bytes_needed(&self) -> Option<usize> {
+        self.next_frame_length()
+            .map(|len| len.saturating_sub(self.buffer.len()))
+    }
+
+    /// Peeks at the packet header of the next frame in the buffer without consuming bytes.
+    /// Returns `None` if fewer than `HEADER_SIZE` bytes are buffered or if the header fails validation.
+    pub fn peek_header(&self) -> Option<PacketHeader> {
+        if self.buffer.len() < HEADER_SIZE {
+            return None;
+        }
+        PacketHeader::decode(&self.buffer[..HEADER_SIZE]).ok()
+    }
+
+    /// Peeks at the packet type of the next frame in the buffer without consuming bytes.
+    /// Returns `None` if the header is not yet available or invalid.
+    pub fn peek_packet_type(&self) -> Option<crate::protocol::PacketType> {
+        self.peek_header().map(|h| h.packet_type)
     }
 
     pub fn has_pending_frame(&self) -> bool {
@@ -247,5 +279,56 @@ mod tests {
         assert_eq!(frame, decoded);
         assert_eq!(decoder.next_frame_length(), None);
         assert!(!decoder.has_pending_frame());
+    }
+
+    #[test]
+    fn test_codec_peek_header_and_type() {
+        let mut decoder = FrameDecoder::new();
+        assert!(decoder.peek_header().is_none());
+        assert!(decoder.peek_packet_type().is_none());
+
+        let frame = PacketFrame::new(PacketType::Ping, 101, b"pingdata".to_vec()).unwrap();
+        decoder.feed_frame(&frame);
+
+        let header = decoder.peek_header().expect("peek_header should return header");
+        assert_eq!(header.packet_type, PacketType::Ping);
+        assert_eq!(header.seq, 101);
+        assert_eq!(header.payload_len, 8);
+        assert_eq!(decoder.peek_packet_type(), Some(PacketType::Ping));
+
+        // Ensure peeking didn't consume any data
+        assert_eq!(decoder.buffer_len(), frame.total_len());
+        let decoded = decoder.decode_frame().unwrap().expect("should still decode");
+        assert_eq!(decoded, frame);
+        assert!(decoder.is_empty());
+    }
+
+    #[test]
+    fn test_codec_feed_frame_and_reset() {
+        let mut decoder = FrameDecoder::new();
+        decoder.reserve(1000);
+        assert!(decoder.capacity() >= 1000);
+
+        let frame = PacketFrame::new(PacketType::Data, 1, b"test".to_vec()).unwrap();
+        let encoded = frame.encode();
+
+        assert_eq!(decoder.remaining_bytes_needed(), None);
+
+        // Feed only header
+        decoder.feed(&encoded[..HEADER_SIZE]);
+        assert_eq!(decoder.remaining_bytes_needed(), Some(4));
+
+        // Feed remaining payload
+        decoder.feed(&encoded[HEADER_SIZE..]);
+        assert_eq!(decoder.remaining_bytes_needed(), Some(0));
+
+        let decoded = decoder.decode_frame().unwrap().unwrap();
+        assert_eq!(decoded, frame);
+
+        decoder.feed(b"leftover-bytes");
+        assert!(!decoder.is_empty());
+        decoder.reset();
+        assert!(decoder.is_empty());
+        assert_eq!(decoder.buffer_len(), 0);
     }
 }
