@@ -43,6 +43,14 @@ impl HybridKemPublicKey {
         &self.kyber_pk
     }
 
+    pub fn kyber_pk_bytes(&self) -> &[u8] {
+        self.kyber_pk.as_bytes()
+    }
+
+    pub fn into_parts(self) -> ([u8; X25519_KEY_SIZE], KyberPublicKey) {
+        (self.x25519_pk, self.kyber_pk)
+    }
+
     pub fn encoded_len(&self) -> usize {
         X25519_KEY_SIZE + self.kyber_pk.as_bytes().len()
     }
@@ -155,6 +163,14 @@ impl HybridKemCiphertext {
         &self.kyber_ct
     }
 
+    pub fn kyber_ct_bytes(&self) -> &[u8] {
+        self.kyber_ct.as_bytes()
+    }
+
+    pub fn into_parts(self) -> ([u8; X25519_KEY_SIZE], KyberCiphertext) {
+        (self.x25519_ephemeral_pk, self.kyber_ct)
+    }
+
     pub fn encoded_len(&self) -> usize {
         X25519_KEY_SIZE + self.kyber_ct.as_bytes().len()
     }
@@ -165,6 +181,7 @@ impl HybridKemCiphertext {
         bytes.extend_from_slice(self.kyber_ct.as_bytes());
         bytes
     }
+
 
 
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
@@ -221,6 +238,18 @@ impl HybridKemKeyPair {
                 kyber_sk,
             },
         }
+    }
+
+    pub fn public_key(&self) -> &HybridKemPublicKey {
+        &self.public_key
+    }
+
+    pub fn secret_key(&self) -> &HybridKemSecretKey {
+        &self.secret_key
+    }
+
+    pub fn into_parts(self) -> (HybridKemPublicKey, HybridKemSecretKey) {
+        (self.public_key, self.secret_key)
     }
 }
 
@@ -355,6 +384,27 @@ mod tests {
         let ct_owned = ct.clone();
         let ct_vec: Vec<u8> = ct_owned.into();
         assert_eq!(ct_vec, ct.to_bytes());
+    }
+
+    #[test]
+    fn test_kem_keypair_and_parts() {
+        let pair = HybridKemKeyPair::generate();
+        assert_eq!(pair.public_key().x25519_pk(), pair.public_key.x25519_pk());
+        assert_eq!(pair.public_key().kyber_pk_bytes(), pair.public_key.kyber_pk.as_bytes());
+        assert_eq!(pair.secret_key().x25519_sk(), pair.secret_key.x25519_sk());
+
+        let (ct, _) = encapsulate_hybrid(pair.public_key());
+        assert_eq!(ct.kyber_ct_bytes(), ct.kyber_ct.as_bytes());
+
+        let (x_ct, kyber_ct) = ct.into_parts();
+        assert_eq!(x_ct.len(), X25519_KEY_SIZE);
+        assert!(!kyber_ct.as_bytes().is_empty());
+
+        let (pk, sk) = pair.into_parts();
+        let (x_pk, kyber_pk) = pk.into_parts();
+        assert_eq!(x_pk.len(), X25519_KEY_SIZE);
+        assert_eq!(kyber_pk.as_bytes().len(), 1184); // Kyber768 public key size
+        assert_eq!(sk.x25519_sk().len(), X25519_KEY_SIZE);
     }
 }
 
