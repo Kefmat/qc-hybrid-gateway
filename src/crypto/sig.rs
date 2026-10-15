@@ -45,6 +45,14 @@ impl HybridSigPublicKey {
         &self.dilithium_pk
     }
 
+    pub fn dilithium_pk_bytes(&self) -> &[u8] {
+        self.dilithium_pk.as_bytes()
+    }
+
+    pub fn into_parts(self) -> ([u8; ED25519_PUBLIC_KEY_SIZE], DilithiumPublicKey) {
+        (self.ed25519_pk, self.dilithium_pk)
+    }
+
     pub fn encoded_len(&self) -> usize {
         ED25519_PUBLIC_KEY_SIZE + self.dilithium_pk.as_bytes().len()
     }
@@ -157,6 +165,14 @@ impl HybridSignature {
         &self.dilithium_sig
     }
 
+    pub fn dilithium_sig_bytes(&self) -> &[u8] {
+        self.dilithium_sig.as_bytes()
+    }
+
+    pub fn into_parts(self) -> ([u8; ED25519_SIGNATURE_SIZE], DilithiumSignature) {
+        (self.ed25519_sig, self.dilithium_sig)
+    }
+
     pub fn encoded_len(&self) -> usize {
         ED25519_SIGNATURE_SIZE + self.dilithium_sig.as_bytes().len()
     }
@@ -167,6 +183,7 @@ impl HybridSignature {
         bytes.extend_from_slice(self.dilithium_sig.as_bytes());
         bytes
     }
+
 
 
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
@@ -225,6 +242,18 @@ impl HybridSigKeyPair {
                 dilithium_sk,
             },
         }
+    }
+
+    pub fn public_key(&self) -> &HybridSigPublicKey {
+        &self.public_key
+    }
+
+    pub fn secret_key(&self) -> &HybridSigSecretKey {
+        &self.secret_key
+    }
+
+    pub fn into_parts(self) -> (HybridSigPublicKey, HybridSigSecretKey) {
+        (self.public_key, self.secret_key)
     }
 }
 
@@ -356,6 +385,27 @@ mod tests {
         let sig_owned = sig.clone();
         let sig_vec: Vec<u8> = sig_owned.into();
         assert_eq!(sig_vec, sig.to_bytes());
+    }
+
+    #[test]
+    fn test_sig_keypair_and_parts() {
+        let pair = HybridSigKeyPair::generate();
+        assert_eq!(pair.public_key().ed25519_pk(), pair.public_key.ed25519_pk());
+        assert_eq!(pair.public_key().dilithium_pk_bytes(), pair.public_key.dilithium_pk.as_bytes());
+        assert_eq!(pair.secret_key().ed25519_sk(), pair.secret_key.ed25519_sk());
+
+        let sig = sign_hybrid(b"test-parts-payload", pair.secret_key());
+        assert_eq!(sig.dilithium_sig_bytes(), sig.dilithium_sig.as_bytes());
+
+        let (ed_sig, dilithium_sig) = sig.into_parts();
+        assert_eq!(ed_sig.len(), ED25519_SIGNATURE_SIZE);
+        assert!(!dilithium_sig.as_bytes().is_empty());
+
+        let (pk, sk) = pair.into_parts();
+        let (ed_pk, dilithium_pk) = pk.into_parts();
+        assert_eq!(ed_pk.len(), ED25519_PUBLIC_KEY_SIZE);
+        assert!(!dilithium_pk.as_bytes().is_empty());
+        assert_eq!(sk.ed25519_sk().len(), ED25519_PUBLIC_KEY_SIZE);
     }
 }
 
