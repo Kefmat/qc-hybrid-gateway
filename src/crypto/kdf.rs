@@ -68,6 +68,34 @@ impl SessionKeys {
             && self.server_write_key == other.server_write_key
     }
 
+    pub fn as_parts(&self) -> (&[u8; 32], &[u8; 32]) {
+        (&self.client_write_key, &self.server_write_key)
+    }
+
+    pub fn into_parts(self) -> ([u8; 32], [u8; 32]) {
+        (self.client_write_key, self.server_write_key)
+    }
+
+    pub fn try_from_slices(client_key: &[u8], server_key: &[u8]) -> Result<Self, String> {
+        if client_key.len() != 32 {
+            return Err(format!(
+                "Invalid client key length: expected 32 bytes, got {}",
+                client_key.len()
+            ));
+        }
+        if server_key.len() != 32 {
+            return Err(format!(
+                "Invalid server key length: expected 32 bytes, got {}",
+                server_key.len()
+            ));
+        }
+        let mut client_write_key = [0u8; 32];
+        let mut server_write_key = [0u8; 32];
+        client_write_key.copy_from_slice(client_key);
+        server_write_key.copy_from_slice(server_key);
+        Ok(Self::new(client_write_key, server_write_key))
+    }
+
     pub fn rekey(&mut self, new_client_key: [u8; 32], new_server_key: [u8; 32]) {
         self.zeroize_keys();
         self.client_write_key = new_client_key;
@@ -113,6 +141,14 @@ pub fn derive_session_keys(master_shared_secret: &[u8; 32], transcript_hash: &[u
         .expect("HKDF expand server key failed");
 
     SessionKeys::new(client_write_key, server_write_key)
+}
+
+pub fn derive_child_secret(master_secret: &[u8; 32], label: &[u8]) -> [u8; 32] {
+    let hk = Hkdf::<Sha256>::new(Some(SESSION_SALT), master_secret);
+    let mut okm = [0u8; 32];
+    hk.expand(label, &mut okm)
+        .expect("HKDF expand child secret failed");
+    okm
 }
 
 
@@ -236,7 +272,36 @@ mod tests {
         *mutable_keys.client_write_key_mut() = [5u8; 32];
         assert_eq!(mutable_keys.client_write_key(), &[5u8; 32]);
     }
+
+    #[test]
+    fn test_session_keys_parts_and_try_from_slices() {
+        let client_k = [0x55u8; 32];
+        let server_k = [0x66u8; 32];
+        let keys = SessionKeys::new(client_k, server_k);
+        assert_eq!(keys.as_parts(), (&client_k, &server_k));
+        let (c, s) = keys.into_parts();
+        assert_eq!(c, client_k);
+        assert_eq!(s, server_k);
+
+        let parsed = SessionKeys::try_from_slices(&client_k, &server_k).unwrap();
+        assert_eq!(parsed.client_write_key(), &client_k);
+        assert_eq!(parsed.server_write_key(), &server_k);
+
+        assert!(SessionKeys::try_from_slices(&[1, 2], &server_k).is_err());
+        assert!(SessionKeys::try_from_slices(&client_k, &[1, 2]).is_err());
+    }
+
+    #[test]
+    fn test_derive_child_secret() {
+        let master = [0x77u8; 32];
+        let child1 = derive_child_secret(&master, b"sub-key-1");
+        let child2 = derive_child_secret(&master, b"sub-key-2");
+        let child1_dup = derive_child_secret(&master, b"sub-key-1");
+        assert_eq!(child1, child1_dup);
+        assert_ne!(child1, child2);
+    }
 }
+
 
 
 
