@@ -290,6 +290,22 @@ impl PacketFrame {
 
         Ok(Self { header, payload })
     }
+
+    pub fn data(seq: u64, payload: Vec<u8>) -> Result<Self, String> {
+        Self::new(PacketType::Data, seq, payload)
+    }
+
+    pub fn ping(seq: u64, timestamp: u64) -> Result<Self, String> {
+        Self::new(PacketType::Ping, seq, timestamp.to_be_bytes().to_vec())
+    }
+
+    pub fn handshake_init(seq: u64, payload: Vec<u8>) -> Result<Self, String> {
+        Self::new(PacketType::HandshakeInit, seq, payload)
+    }
+
+    pub fn handshake_resp(seq: u64, payload: Vec<u8>) -> Result<Self, String> {
+        Self::new(PacketType::HandshakeResp, seq, payload)
+    }
 }
 
 impl fmt::Display for PacketFrame {
@@ -337,6 +353,22 @@ impl AntiReplayFilter {
 
     pub fn seen_count(&self) -> usize {
         self.seen.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.seen.is_empty()
+    }
+
+    pub fn contains(&self, seq: u64) -> bool {
+        self.seen.contains(&seq)
+    }
+
+    pub fn min_valid_seq(&self) -> u64 {
+        self.highest_seq.saturating_sub(self.window_size)
+    }
+
+    pub fn is_seq_too_old(&self, seq: u64) -> bool {
+        seq.saturating_add(self.window_size) <= self.highest_seq
     }
 
     pub fn reset(&mut self) {
@@ -581,7 +613,40 @@ mod tests {
         assert_eq!(hdr, expected_header);
         assert_eq!(payload, vec![10, 20, 30]);
     }
+
+    #[test]
+    fn test_anti_replay_filter_inspection_and_frame_constructors() {
+        let mut filter = AntiReplayFilter::new(10);
+        assert!(filter.is_empty());
+        assert_eq!(filter.min_valid_seq(), 0);
+        assert!(!filter.contains(5));
+
+        filter.check_and_update(25);
+        assert!(!filter.is_empty());
+        assert!(filter.contains(25));
+        assert_eq!(filter.min_valid_seq(), 15);
+        assert!(filter.is_seq_too_old(10));
+        assert!(filter.is_seq_too_old(15));
+        assert!(!filter.is_seq_too_old(16));
+
+        let data_frame = PacketFrame::data(100, b"data-test".to_vec()).unwrap();
+        assert_eq!(data_frame.packet_type(), PacketType::Data);
+        assert_eq!(data_frame.seq(), 100);
+        assert_eq!(data_frame.payload(), b"data-test");
+
+        let ping_frame = PacketFrame::ping(101, 9999).unwrap();
+        assert_eq!(ping_frame.packet_type(), PacketType::Ping);
+        assert_eq!(ping_frame.seq(), 101);
+        assert_eq!(ping_frame.payload_len(), 8);
+
+        let init_frame = PacketFrame::handshake_init(1, b"init".to_vec()).unwrap();
+        assert_eq!(init_frame.packet_type(), PacketType::HandshakeInit);
+
+        let resp_frame = PacketFrame::handshake_resp(2, b"resp".to_vec()).unwrap();
+        assert_eq!(resp_frame.packet_type(), PacketType::HandshakeResp);
+    }
 }
+
 
 
 
