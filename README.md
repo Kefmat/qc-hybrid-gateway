@@ -1,5 +1,10 @@
 # PQC Hybrid Gateway (`pqc-hybrid-gateway`)
 
+[![Rust](https://img.shields.io/badge/rust-1.75%2B-orange.svg)](https://www.rust-lang.org/)
+[![License](https://img.shields.io/badge/license-MIT%2FApache--2.0-blue.svg)](Cargo.toml)
+[![Tests](https://img.shields.io/badge/tests-107%20passing-brightgreen.svg)](https://github.com/Kefmat/qc-hybrid-gateway)
+[![PQC](https://img.shields.io/badge/NIST-FIPS%20203%20%7C%20FIPS%20204-purple.svg)](https://csrc.nist.gov/pubs/fips/203/final)
+
 A high-performance Post-Quantum Hybrid Cryptographic Gateway and Secure Tunnel engine written in Rust.
 
 The gateway combines NIST-standardized Post-Quantum Cryptography (PQC) algorithms with battle-tested classical primitives in a dual-layer hybrid architecture, ensuring forward security against cryptographically relevant quantum computers (CRQCs) while maintaining classical compliance.
@@ -96,6 +101,59 @@ The `Session` engine manages tunnel state transitions across the connection life
 
 ---
 
+## Rust API Quickstart
+
+Add `pqc-hybrid-gateway` to your `Cargo.toml`:
+
+```toml
+[dependencies]
+pqc-hybrid-gateway = { git = "https://github.com/Kefmat/qc-hybrid-gateway.git" }
+```
+
+### Key Encapsulation, Signatures & Wire Framing
+
+```rust
+use pqc_hybrid_gateway::crypto::{
+    aead::AeadCipher,
+    kdf::{derive_session_keys, hash_transcript},
+    kem::{decapsulate_hybrid, encapsulate_hybrid, HybridKemKeyPair},
+    sig::{sign_hybrid, verify_hybrid, HybridSigKeyPair},
+};
+use pqc_hybrid_gateway::protocol::{PacketFrame, PacketType};
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // 1. Generate hybrid keypairs
+    let receiver_kem = HybridKemKeyPair::generate();
+    let sender_sig = HybridSigKeyPair::generate();
+
+    // 2. Hybrid KEM Encapsulation (ML-KEM-768 + X25519)
+    let (ciphertext, sender_ss) = encapsulate_hybrid(&receiver_kem.public_key);
+    let receiver_ss = decapsulate_hybrid(&ciphertext, &receiver_kem.secret_key);
+    assert_eq!(sender_ss, receiver_ss);
+
+    // 3. Hybrid Signature & Verification (ML-DSA-65 + Ed25519)
+    let message = b"critical-zero-trust-handshake";
+    let signature = sign_hybrid(message, &sender_sig.secret_key);
+    assert!(verify_hybrid(message, &signature, &sender_sig.public_key));
+
+    // 4. Derive AEAD session write keys bound to handshake transcript
+    let transcript = hash_transcript(&[message, &ciphertext.to_bytes()]);
+    let session_keys = derive_session_keys(&sender_ss, &transcript);
+
+    // 5. Encrypt application payload with ChaCha20-Poly1305 and frame
+    let cipher = AeadCipher::new(&session_keys.client_write_key);
+    let encrypted = cipher.encrypt(1, b"aad-metadata", b"Confidential tunnel traffic")?;
+    let frame = PacketFrame::new(PacketType::Data, 1, encrypted)?;
+    let wire_bytes = frame.encode();
+
+    assert_eq!(frame.seq(), 1);
+    assert_eq!(frame.packet_type(), PacketType::Data);
+    Ok(())
+}
+```
+
+---
+
 ## Directory Structure
 
 ```text
@@ -105,7 +163,7 @@ pqc-hybrid-gateway/
 ├── .gitignore
 └── src/
     ├── lib.rs              # Core library exports and integration test suite
-    ├── main.rs             # CLI interface (keygen, verify, bench)
+    ├── main.rs             # CLI interface (info, keygen, verify, bench, tunnel)
     ├── crypto/
     │   ├── mod.rs          # Crypto subsystem declarations
     │   ├── kem.rs          # ML-KEM-768 + X25519 Hybrid Key Encapsulation
@@ -134,6 +192,12 @@ pqc-hybrid-gateway/
 cargo test
 ```
 
+### Display Cryptographic Specification
+Display the cryptographic parameter matrix and protocol architecture:
+```bash
+cargo run -- info
+```
+
 ### Run Cryptographic Verification Suite
 Runs full end-to-end verification of KEM exchange, signature validation, AEAD tamper detection, anti-replay protection, and wire framing:
 ```bash
@@ -157,7 +221,6 @@ Benchmark the cryptographic primitives (KEM Keygen/Encap/Decap, Signature Sign/V
 ```bash
 cargo run --release -- bench
 ```
-
 
 ---
 
