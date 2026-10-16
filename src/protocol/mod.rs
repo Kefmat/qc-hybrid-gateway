@@ -263,6 +263,10 @@ impl PacketFrame {
         (self.header, self.payload)
     }
 
+    pub fn as_parts(&self) -> (&PacketHeader, &[u8]) {
+        (&self.header, &self.payload)
+    }
+
     pub fn total_len(&self) -> usize {
         HEADER_SIZE + self.payload.len()
     }
@@ -609,6 +613,10 @@ mod tests {
     fn test_packet_frame_into_parts() {
         let frame = PacketFrame::new(PacketType::Data, 99, vec![10, 20, 30]).unwrap();
         let expected_header = frame.header().clone();
+        let (hdr_ref, payload_ref) = frame.as_parts();
+        assert_eq!(hdr_ref, &expected_header);
+        assert_eq!(payload_ref, &[10, 20, 30]);
+
         let (hdr, payload) = frame.into_parts();
         assert_eq!(hdr, expected_header);
         assert_eq!(payload, vec![10, 20, 30]);

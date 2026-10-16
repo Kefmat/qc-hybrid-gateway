@@ -56,6 +56,10 @@ impl HandshakeInit {
         (self.ephemeral_pk, self.nonce, self.signature)
     }
 
+    pub fn as_parts(&self) -> (&HybridKemPublicKey, &[u8; HANDSHAKE_NONCE_SIZE], &HybridSignature) {
+        (&self.ephemeral_pk, &self.nonce, &self.signature)
+    }
+
     pub fn ephemeral_pk(&self) -> &HybridKemPublicKey {
         &self.ephemeral_pk
     }
@@ -186,6 +190,10 @@ impl HandshakeResponse {
 
     pub fn into_parts(self) -> (HybridKemCiphertext, [u8; HANDSHAKE_NONCE_SIZE], HybridSignature) {
         (self.ciphertext, self.nonce, self.signature)
+    }
+
+    pub fn as_parts(&self) -> (&HybridKemCiphertext, &[u8; HANDSHAKE_NONCE_SIZE], &HybridSignature) {
+        (&self.ciphertext, &self.nonce, &self.signature)
     }
 
     pub fn ciphertext(&self) -> &HybridKemCiphertext {
@@ -376,6 +384,11 @@ mod tests {
         assert!(init_str.contains("HandshakeInit"));
         assert!(init_str.contains("pk_len="));
 
+        let (pk_ref, n_ref, sig_ref) = init.as_parts();
+        assert_eq!(pk_ref, &kem_keys.public_key);
+        assert_eq!(n_ref, &nonce);
+        assert_eq!(sig_ref, &init.signature);
+
         let (pk, n, sig) = init.clone().into_parts();
         assert_eq!(pk, kem_keys.public_key);
         assert_eq!(n, nonce);
@@ -386,6 +399,11 @@ mod tests {
         let resp_str = resp.to_string();
         assert!(resp_str.contains("HandshakeResponse"));
         assert!(resp_str.contains("ct_len="));
+
+        let (resp_ct_ref, resp_n_ref, resp_sig_ref) = resp.as_parts();
+        assert_eq!(resp_ct_ref, &ct);
+        assert_eq!(resp_n_ref, &nonce);
+        assert_eq!(resp_sig_ref, &resp.signature);
 
         let (resp_ct, resp_n, resp_sig) = resp.clone().into_parts();
         assert_eq!(resp_ct, ct);
