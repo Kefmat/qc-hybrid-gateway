@@ -43,6 +43,21 @@ impl SessionKeys {
         }
     }
 
+    pub fn zeroed() -> Self {
+        Self {
+            client_write_key: [0u8; 32],
+            server_write_key: [0u8; 32],
+        }
+    }
+
+    pub fn as_client_slice(&self) -> &[u8] {
+        &self.client_write_key
+    }
+
+    pub fn as_server_slice(&self) -> &[u8] {
+        &self.server_write_key
+    }
+
     pub fn client_write_key(&self) -> &[u8; 32] {
         &self.client_write_key
     }
@@ -114,6 +129,12 @@ impl std::fmt::Debug for SessionKeys {
             .field("client_write_key", &"[REDACTED]")
             .field("server_write_key", &"[REDACTED]")
             .finish()
+    }
+}
+
+impl Default for SessionKeys {
+    fn default() -> Self {
+        Self::zeroed()
     }
 }
 
@@ -215,15 +236,24 @@ mod tests {
         let session_keys = derive_session_keys(&master_secret, &transcript);
         assert_eq!(session_keys.client_write_key(), &session_keys.client_write_key);
         assert_eq!(session_keys.server_write_key(), &session_keys.server_write_key);
+        assert_eq!(session_keys.as_client_slice(), &session_keys.client_write_key[..]);
+        assert_eq!(session_keys.as_server_slice(), &session_keys.server_write_key[..]);
     }
 
     #[test]
-    fn test_session_keys_new() {
+    fn test_session_keys_new_and_default() {
         let client_k = [0x33u8; 32];
         let server_k = [0x44u8; 32];
         let session_keys = SessionKeys::new(client_k, server_k);
         assert_eq!(session_keys.client_write_key, client_k);
         assert_eq!(session_keys.server_write_key, server_k);
+
+        let zeroed_keys = SessionKeys::zeroed();
+        assert!(zeroed_keys.is_zeroized());
+
+        let default_keys = SessionKeys::default();
+        assert!(default_keys.is_zeroized());
+        assert!(default_keys.matches(&zeroed_keys));
     }
 
     #[test]

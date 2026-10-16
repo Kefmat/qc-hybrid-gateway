@@ -35,6 +35,21 @@ impl AeadCipher {
         NONCE_SIZE
     }
 
+    /// Checks whether a given key length in bytes is valid for ChaCha20-Poly1305 (32 bytes).
+    pub const fn is_valid_key_len(len: usize) -> bool {
+        len == KEY_SIZE
+    }
+
+    /// Checks whether a given nonce length in bytes is valid for ChaCha20-Poly1305 (12 bytes).
+    pub const fn is_valid_nonce_len(len: usize) -> bool {
+        len == NONCE_SIZE
+    }
+
+    /// Checks whether a given tag length in bytes is valid for ChaCha20-Poly1305 (16 bytes).
+    pub const fn is_valid_tag_len(len: usize) -> bool {
+        len == TAG_SIZE
+    }
+
     /// Computes the expected ciphertext length for a given plaintext length including the authentication tag.
     pub const fn ciphertext_len(plaintext_len: usize) -> usize {
         plaintext_len + TAG_SIZE
@@ -211,6 +226,12 @@ mod tests {
         assert_eq!(AeadCipher::key_size(), 32);
         assert_eq!(AeadCipher::tag_size(), 16);
         assert_eq!(AeadCipher::nonce_size(), 12);
+        assert!(AeadCipher::is_valid_key_len(32));
+        assert!(!AeadCipher::is_valid_key_len(16));
+        assert!(AeadCipher::is_valid_nonce_len(12));
+        assert!(!AeadCipher::is_valid_nonce_len(8));
+        assert!(AeadCipher::is_valid_tag_len(16));
+        assert!(!AeadCipher::is_valid_tag_len(32));
     }
 
     #[test]
