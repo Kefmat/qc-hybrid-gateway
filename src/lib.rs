@@ -199,6 +199,52 @@ mod tests {
         assert!(client_session.is_closed());
         assert!(server_session.is_closed());
     }
+
+    #[test]
+    fn test_rapid_rekeying_stress_and_out_of_order_packets() {
+        let master_secret = [0xAAu8; 32];
+        let mut transcript = hash_transcript(&[b"initial-session-transcript"]);
+
+        let mut client = Session::new_client();
+        let mut server = Session::new_server();
+
+        let initial_keys = derive_session_keys(&master_secret, &transcript);
+        client.establish(&initial_keys).unwrap();
+        server.establish(&initial_keys).unwrap();
+
+        // Perform 3 consecutive rapid rekeys
+        for round in 1..=3 {
+            let data_msg = format!("round-{}-data", round);
+            let frame = client.encrypt_packet(PacketType::Data, data_msg.as_bytes()).unwrap();
+            let decrypted = server.decrypt_packet(&frame).unwrap();
+            assert_eq!(decrypted, data_msg.as_bytes());
+
+            client.trigger_rekey().unwrap();
+            server.trigger_rekey().unwrap();
+
+            transcript = hash_transcript(&[&transcript, format!("rotation-{}", round).as_bytes()]);
+            let keys = derive_session_keys(&master_secret, &transcript);
+
+            client.complete_rekey(&keys).unwrap();
+            server.complete_rekey(&keys).unwrap();
+            assert_eq!(client.metrics().rekeys_completed, round);
+            assert_eq!(server.metrics().rekeys_completed, round);
+        }
+
+        // Out-of-order frame delivery test
+        let p1 = client.encrypt_packet(PacketType::Data, b"pkt-1").unwrap();
+        let p2 = client.encrypt_packet(PacketType::Data, b"pkt-2").unwrap();
+        let p3 = client.encrypt_packet(PacketType::Data, b"pkt-3").unwrap();
+
+        // Deliver out of order: p2 then p1 (within window), then p3
+        assert_eq!(server.decrypt_packet(&p2).unwrap(), b"pkt-2");
+        assert_eq!(server.decrypt_packet(&p1).unwrap(), b"pkt-1");
+        assert_eq!(server.decrypt_packet(&p3).unwrap(), b"pkt-3");
+
+        // Duplicate replay of p2 must fail
+        assert!(server.decrypt_packet(&p2).is_err());
+        assert_eq!(server.metrics().replays_dropped, 1);
+    }
 }
 
 
