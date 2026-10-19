@@ -121,6 +121,33 @@ impl SessionKeys {
         self.client_write_key.zeroize();
         self.server_write_key.zeroize();
     }
+
+    pub fn constant_time_eq(&self, other: &Self) -> bool {
+        let mut diff = 0u8;
+        for (a, b) in self.client_write_key.iter().zip(other.client_write_key.iter()) {
+            diff |= a ^ b;
+        }
+        for (a, b) in self.server_write_key.iter().zip(other.server_write_key.iter()) {
+            diff |= a ^ b;
+        }
+        diff == 0
+    }
+
+    pub fn client_write_key_is_zero(&self) -> bool {
+        let mut acc = 0u8;
+        for b in &self.client_write_key {
+            acc |= *b;
+        }
+        acc == 0
+    }
+
+    pub fn server_write_key_is_zero(&self) -> bool {
+        let mut acc = 0u8;
+        for b in &self.server_write_key {
+            acc |= *b;
+        }
+        acc == 0
+    }
 }
 
 impl std::fmt::Debug for SessionKeys {
@@ -329,6 +356,26 @@ mod tests {
         let child1_dup = derive_child_secret(&master, b"sub-key-1");
         assert_eq!(child1, child1_dup);
         assert_ne!(child1, child2);
+    }
+
+    #[test]
+    fn test_session_keys_constant_time_eq_and_zero_checks() {
+        let keys_a = SessionKeys::new([0x42; 32], [0x43; 32]);
+        let keys_b = SessionKeys::new([0x42; 32], [0x43; 32]);
+        let keys_c = SessionKeys::new([0x42; 32], [0x44; 32]);
+
+        assert!(keys_a.constant_time_eq(&keys_b));
+        assert!(!keys_a.constant_time_eq(&keys_c));
+        assert!(!keys_a.client_write_key_is_zero());
+        assert!(!keys_a.server_write_key_is_zero());
+
+        let mut zero_keys = SessionKeys::zeroed();
+        assert!(zero_keys.client_write_key_is_zero());
+        assert!(zero_keys.server_write_key_is_zero());
+        assert!(zero_keys.is_zeroized());
+
+        zero_keys.zeroize_keys();
+        assert!(zero_keys.client_write_key_is_zero());
     }
 }
 
