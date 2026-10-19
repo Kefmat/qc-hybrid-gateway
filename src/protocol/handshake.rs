@@ -72,6 +72,32 @@ impl HandshakeInit {
         &self.signature
     }
 
+    pub fn is_valid_nonce(&self) -> bool {
+        self.nonce.iter().any(|&b| b != 0)
+    }
+
+    pub fn validate(&self) -> Result<(), &'static str> {
+        if !self.is_valid_nonce() {
+            return Err("HandshakeInit contains an all-zero nonce");
+        }
+        if self.ephemeral_pk.encoded_len() == 0 {
+            return Err("HandshakeInit ephemeral_pk is empty");
+        }
+        if self.signature.encoded_len() == 0 {
+            return Err("HandshakeInit signature is empty");
+        }
+        Ok(())
+    }
+
+    pub fn summary(&self) -> String {
+        format!(
+            "HandshakeInit(pk={}B, nonce={}B, sig={}B)",
+            self.ephemeral_pk.encoded_len(),
+            self.nonce.len(),
+            self.signature.encoded_len()
+        )
+    }
+
     pub fn encoded_len(&self) -> usize {
         4 + self.ephemeral_pk.encoded_len() + HANDSHAKE_NONCE_SIZE + 4 + self.signature.encoded_len()
     }
@@ -206,6 +232,32 @@ impl HandshakeResponse {
 
     pub fn signature(&self) -> &HybridSignature {
         &self.signature
+    }
+
+    pub fn is_valid_nonce(&self) -> bool {
+        self.nonce.iter().any(|&b| b != 0)
+    }
+
+    pub fn validate(&self) -> Result<(), &'static str> {
+        if !self.is_valid_nonce() {
+            return Err("HandshakeResponse contains an all-zero nonce");
+        }
+        if self.ciphertext.encoded_len() == 0 {
+            return Err("HandshakeResponse ciphertext is empty");
+        }
+        if self.signature.encoded_len() == 0 {
+            return Err("HandshakeResponse signature is empty");
+        }
+        Ok(())
+    }
+
+    pub fn summary(&self) -> String {
+        format!(
+            "HandshakeResponse(ct={}B, nonce={}B, sig={}B)",
+            self.ciphertext.encoded_len(),
+            self.nonce.len(),
+            self.signature.encoded_len()
+        )
     }
 
     pub fn encoded_len(&self) -> usize {
@@ -425,6 +477,36 @@ mod tests {
         let resp = HandshakeResponse::create(ct.clone(), nonce, &sig_keys.secret_key);
         let resp_payload = resp.signed_payload();
         assert_eq!(resp_payload.len(), ct.to_bytes().len() + HANDSHAKE_NONCE_SIZE);
+    }
+
+    #[test]
+    fn test_handshake_validation_and_summary() {
+        let kem_keys = HybridKemKeyPair::generate();
+        let sig_keys = HybridSigKeyPair::generate();
+        let nonce = [7u8; HANDSHAKE_NONCE_SIZE];
+
+        let init = HandshakeInit::create(kem_keys.public_key.clone(), nonce, &sig_keys.secret_key);
+        assert!(init.is_valid_nonce());
+        assert!(init.validate().is_ok());
+        let init_summary = init.summary();
+        assert!(init_summary.contains("HandshakeInit"));
+
+        let mut invalid_init = init.clone();
+        invalid_init.nonce = [0u8; HANDSHAKE_NONCE_SIZE];
+        assert!(!invalid_init.is_valid_nonce());
+        assert!(invalid_init.validate().is_err());
+
+        let (ct, _) = encapsulate_hybrid(&kem_keys.public_key);
+        let resp = HandshakeResponse::create(ct, nonce, &sig_keys.secret_key);
+        assert!(resp.is_valid_nonce());
+        assert!(resp.validate().is_ok());
+        let resp_summary = resp.summary();
+        assert!(resp_summary.contains("HandshakeResponse"));
+
+        let mut invalid_resp = resp.clone();
+        invalid_resp.nonce = [0u8; HANDSHAKE_NONCE_SIZE];
+        assert!(!invalid_resp.is_valid_nonce());
+        assert!(invalid_resp.validate().is_err());
     }
 }
 
