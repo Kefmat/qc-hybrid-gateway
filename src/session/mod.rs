@@ -153,6 +153,21 @@ impl SessionState {
     pub const fn is_terminal(&self) -> bool {
         matches!(self, SessionState::Closed)
     }
+
+    pub const fn can_transition_to(&self, target: &SessionState) -> bool {
+        match (*self, *target) {
+            (SessionState::Uninitialized, SessionState::Handshaking) => true,
+            (SessionState::Uninitialized, SessionState::Established) => true,
+            (SessionState::Handshaking, SessionState::Established) => true,
+            (SessionState::Handshaking, SessionState::Closed) => true,
+            (SessionState::Established, SessionState::Rekeying) => true,
+            (SessionState::Established, SessionState::Closed) => true,
+            (SessionState::Rekeying, SessionState::Established) => true,
+            (SessionState::Rekeying, SessionState::Closed) => true,
+            (SessionState::Closed, _) => false,
+            _ => false,
+        }
+    }
 }
 
 impl fmt::Display for SessionState {
@@ -510,6 +525,18 @@ impl Session {
         self.rx_cipher = None;
         self.rx_filter.reset();
     }
+
+    pub fn terminate(&mut self) {
+        self.close();
+    }
+
+    pub fn can_transition_to(&self, target: &SessionState) -> bool {
+        self.state.can_transition_to(target)
+    }
+
+    pub fn is_rekey_in_progress(&self) -> bool {
+        self.state == SessionState::Rekeying
+    }
 }
 
 
@@ -557,6 +584,19 @@ mod tests {
         assert!(!SessionState::Uninitialized.is_terminal());
         assert!(!SessionState::Established.is_terminal());
         assert!(SessionState::Closed.is_terminal());
+
+        assert!(SessionState::Uninitialized.can_transition_to(&SessionState::Handshaking));
+        assert!(SessionState::Handshaking.can_transition_to(&SessionState::Established));
+        assert!(SessionState::Established.can_transition_to(&SessionState::Rekeying));
+        assert!(SessionState::Rekeying.can_transition_to(&SessionState::Established));
+        assert!(SessionState::Established.can_transition_to(&SessionState::Closed));
+        assert!(!SessionState::Closed.can_transition_to(&SessionState::Established));
+
+        let mut session = Session::new_client();
+        assert!(session.can_transition_to(&SessionState::Handshaking));
+        assert!(!session.is_rekey_in_progress());
+        session.terminate();
+        assert!(session.is_closed());
     }
 
     #[test]
