@@ -311,6 +311,40 @@ mod tests {
         let bad_key = [0x33u8; 20];
         assert!(cipher.rekey_from_slice(&bad_key).is_err());
     }
+
+    #[test]
+    fn test_aead_corrupted_tag_fails() {
+        let key = [0x88u8; KEY_SIZE];
+        let cipher = AeadCipher::new(&key);
+        let mut ct = cipher.encrypt(42, b"associated-data", b"payload to protect").unwrap();
+
+        // Mutate the final tag byte
+        let last_idx = ct.len() - 1;
+        ct[last_idx] ^= 0x01;
+        assert!(cipher.decrypt(42, b"associated-data", &ct).is_err());
+
+        // Mutate the first tag byte (at ct.len() - TAG_SIZE)
+        ct[last_idx] ^= 0x01; // restore
+        let first_tag_idx = ct.len() - TAG_SIZE;
+        ct[first_tag_idx] ^= 0x55;
+        assert!(cipher.decrypt(42, b"associated-data", &ct).is_err());
+    }
+
+    #[test]
+    fn test_aead_nonce_sequence_boundaries() {
+        let n_zero = format_nonce(0);
+        let n_max = format_nonce(u64::MAX);
+        assert_ne!(n_zero, n_max);
+        assert_eq!(n_zero.as_slice()[0..4], [0, 0, 0, 0]);
+        assert_eq!(n_max.as_slice()[0..4], [0, 0, 0, 0]);
+        assert_eq!(&n_max.as_slice()[4..12], &u64::MAX.to_be_bytes());
+
+        let key = [0x99u8; KEY_SIZE];
+        let cipher = AeadCipher::new(&key);
+        let ct_seq1 = cipher.encrypt(1, b"aad", b"hello").unwrap();
+        // Trying to decrypt with seq 2 must fail even with exact same payload and aad
+        assert!(cipher.decrypt(2, b"aad", &ct_seq1).is_err());
+    }
 }
 
 
