@@ -230,6 +230,37 @@ impl SessionMetrics {
         self.replays_dropped = self.replays_dropped.saturating_add(other.replays_dropped);
         self.rekeys_completed = self.rekeys_completed.saturating_add(other.rekeys_completed);
     }
+
+    pub fn to_json(&self) -> String {
+        format!(
+            r#"{{"tx_packets":{},"rx_packets":{},"tx_bytes":{},"rx_bytes":{},"replays_dropped":{},"rekeys_completed":{},"total_packets":{},"total_bytes":{}}}"#,
+            self.tx_packets,
+            self.rx_packets,
+            self.tx_bytes,
+            self.rx_bytes,
+            self.replays_dropped,
+            self.rekeys_completed,
+            self.total_packets(),
+            self.total_bytes(),
+        )
+    }
+
+    pub fn to_report(&self) -> String {
+        let avg_str = match self.average_packet_size() {
+            Some(avg) => format!("{} bytes", avg),
+            None => "N/A".to_string(),
+        };
+        format!(
+            "Session Telemetry Report:\n  - TX: {} packets ({} bytes)\n  - RX: {} packets ({} bytes)\n  - Replays Dropped: {}\n  - Rekeys Completed: {}\n  - Average Packet Size: {}",
+            self.tx_packets,
+            self.tx_bytes,
+            self.rx_packets,
+            self.rx_bytes,
+            self.replays_dropped,
+            self.rekeys_completed,
+            avg_str
+        )
+    }
 }
 
 impl std::ops::Add for SessionMetrics {
@@ -536,6 +567,26 @@ impl Session {
 
     pub fn is_rekey_in_progress(&self) -> bool {
         self.state == SessionState::Rekeying
+    }
+
+    pub fn telemetry_report(&self) -> String {
+        format!(
+            "Session ID: {} [{} | {}]\n{}",
+            self.session_id,
+            self.role,
+            self.state,
+            self.metrics.to_report()
+        )
+    }
+
+    pub fn telemetry_json(&self) -> String {
+        format!(
+            r#"{{"session_id":"{}","role":"{}","state":"{}","metrics":{}}}"#,
+            self.session_id,
+            self.role,
+            self.state,
+            self.metrics.to_json()
+        )
     }
 }
 
@@ -877,6 +928,24 @@ mod tests {
 
         let empty_metrics = SessionMetrics::default();
         assert_eq!(empty_metrics.average_packet_size(), None);
+
+        let json = metrics.to_json();
+        assert!(json.contains("\"tx_packets\":10"));
+        assert!(json.contains("\"rx_packets\":20"));
+        assert!(json.contains("\"rekeys_completed\":1"));
+
+        let report = metrics.to_report();
+        assert!(report.contains("Session Telemetry Report"));
+        assert!(report.contains("TX: 10 packets"));
+        assert!(report.contains("Average Packet Size: 100 bytes"));
+
+        let mut session = Session::new_client();
+        session.metrics = metrics;
+        let s_report = session.telemetry_report();
+        assert!(s_report.contains("Client"));
+        let s_json = session.telemetry_json();
+        assert!(s_json.contains("\"role\":\"Client\""));
+        assert!(s_json.contains("\"metrics\":"));
     }
 
     #[test]
