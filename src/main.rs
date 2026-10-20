@@ -32,7 +32,14 @@ enum Commands {
     /// Run cryptographic performance benchmarks
     Bench,
     /// Simulate full Post-Quantum hybrid encrypted tunnel between client and server
-    Tunnel,
+    Tunnel {
+        /// Simulated packet drop rate percentage (0 - 100)
+        #[arg(short, long, default_value_t = 0)]
+        drop_rate: u8,
+        /// Simulated network latency in milliseconds
+        #[arg(short, long, default_value_t = 0)]
+        latency_ms: u64,
+    },
     /// Display cryptographic parameters and architectural specification
     Info,
 }
@@ -218,8 +225,11 @@ fn main() {
             let aead_dec_dur = start.elapsed();
             println!("AEAD Decrypt (1KB):      {:?} per op", aead_dec_dur / aead_iters);
         }
-        Commands::Tunnel => {
+        Commands::Tunnel { drop_rate, latency_ms } => {
             println!("=== Post-Quantum Hybrid Gateway: Tunnel Simulation ===");
+            if drop_rate > 0 || latency_ms > 0 {
+                println!("  [Simulation Profile] Simulated Latency: {}ms | Drop Rate: {}%", latency_ms, drop_rate);
+            }
 
             // 1. Setup Identities
             println!("[Step 1] Initializing client and server long-term cryptographic identities...");
