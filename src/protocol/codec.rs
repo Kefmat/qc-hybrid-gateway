@@ -131,7 +131,25 @@ impl FrameDecoder {
         self.buffer.advance(HEADER_SIZE);
         let payload = self.buffer.split_to(payload_len).to_vec();
 
+        if self.buffer.is_empty() {
+            self.reclaim_unused_capacity();
+        }
+
         Ok(Some(PacketFrame { header, payload }))
+    }
+
+    /// Reclaims buffer capacity and resets position when all bytes have been drained.
+    pub fn reclaim_unused_capacity(&mut self) {
+        if self.buffer.is_empty() {
+            self.buffer.clear();
+        }
+    }
+
+    /// Compacts oversized internal buffer allocations if empty to prevent memory leakage.
+    pub fn compact(&mut self) {
+        if self.buffer.is_empty() && self.buffer.capacity() > self.max_frame_size * 2 {
+            self.buffer = BytesMut::with_capacity(self.max_frame_size);
+        }
     }
 
     pub fn decode_all(&mut self) -> Result<Vec<PacketFrame>, String> {
@@ -139,6 +157,7 @@ impl FrameDecoder {
         while let Some(frame) = self.decode_frame()? {
             frames.push(frame);
         }
+        self.reclaim_unused_capacity();
         Ok(frames)
     }
 }
@@ -330,5 +349,22 @@ mod tests {
         decoder.reset();
         assert!(decoder.is_empty());
         assert_eq!(decoder.buffer_len(), 0);
+    }
+
+    #[test]
+    fn test_codec_buffer_compaction_and_reclaim() {
+        let mut decoder = FrameDecoder::with_max_frame_size(512);
+        let frame = PacketFrame::new(PacketType::Data, 7, b"buffer-opt".to_vec()).unwrap();
+        decoder.feed_frame(&frame);
+        assert!(!decoder.is_empty());
+
+        let decoded = decoder.decode_frame().unwrap().unwrap();
+        assert_eq!(decoded, frame);
+        assert!(decoder.is_empty());
+
+        decoder.reserve(2000);
+        assert!(decoder.capacity() >= 2000);
+        decoder.compact();
+        assert_eq!(decoder.capacity(), 512);
     }
 }
