@@ -241,3 +241,37 @@ cargo run --release -- bench
 - **Anti-Replay Window**: Uses configurable sliding-window bitmask verification (default window: 64 packets) to prevent packet replay attacks.
 - **Memory Safety & Invariants**: All frame lengths and header fields are strictly bounded by `MAX_FRAME_SIZE` (64 KB) with checked constructors.
 - **Real-time Telemetry & Diagnostics**: Tracks transmitted/received packets, payload throughput, average packet sizes, dropped replay packets, and rekey rotation counters.
+
+---
+
+## Post-Quantum Rekey Sequence & Threat Model
+
+### Rekeying Protocol Flow
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Client as Client Session
+    participant Server as Server Session
+    Note over Client,Server: Established State (ChaCha20-Poly1305)
+    Client->>Client: tx_seq >= rekey_threshold
+    Client->>Client: trigger_rekey() -> Rekeying State
+    Server->>Server: trigger_rekey() -> Rekeying State
+    Note over Client,Server: Ephemeral KEM / Transcript Binding (HKDF-SHA256)
+    Client->>Server: Rekey Handshake (New Transcript Hash)
+    Server-->>Client: Rekey Acknowledgment
+    Client->>Client: complete_rekey(new_keys) -> Established
+    Server->>Server: complete_rekey(new_keys) -> Established
+    Note over Client,Server: Zeroize previous session keys & reset sequence counter
+```
+
+### Threat Model & Quantum Security Guarantees
+
+| Attack Vector | Classical Mitigation | Post-Quantum Protection |
+| :--- | :--- | :--- |
+| **Harvest Now, Decrypt Later (HNDL)** | X25519 ECDH (Vulnerable to Shor's algorithm) | **ML-KEM-768 (Kyber)** ensures confidentiality remains quantum-safe |
+| **Identity Forgery / MitM** | Ed25519 digital signatures | **ML-DSA-65 (Dilithium)** dual hybrid authentication |
+| **Packet Tampering & Bit-Flipping** | ChaCha20-Poly1305 AEAD Tag (16B) | Cryptographic MAC bound to per-packet sequence nonces |
+| **Replay & Frame Injection** | Sliding-window bitmask filter | Anti-replay filter tracking monotonic 64-packet window |
+| **Key Compromise Impersonation (KCI)** | Ephemeral transcript hashing | Forward secrecy enforced via continuous in-session rekeying |
+
