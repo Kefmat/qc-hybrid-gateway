@@ -248,6 +248,58 @@ mod tests {
         assert!(server.decrypt_packet(&p2).is_err());
         assert_eq!(server.metrics().replays_dropped, 1);
     }
+
+    #[test]
+    fn test_session_continuous_ratchet_forward_secrecy() {
+        let master_secret = [0x55u8; 32];
+        let transcript = hash_transcript(&[b"test-ratchet-session-transcript"]);
+
+        let mut client = Session::new_client();
+        let mut server = Session::new_server();
+
+        let mut client_keys = derive_session_keys(&master_secret, &transcript);
+        let mut server_keys = derive_session_keys(&master_secret, &transcript);
+
+        client.establish(&client_keys).unwrap();
+        server.establish(&server_keys).unwrap();
+
+        let mut previous_frames = Vec::new();
+
+        // Perform 4 consecutive ratchet evolutions
+        for generation in 1..=4 {
+            let message = format!("generation-{}-payload", generation);
+            let frame = client.encrypt_packet(PacketType::Data, message.as_bytes()).unwrap();
+            let decrypted = server.decrypt_packet(&frame).unwrap();
+            assert_eq!(decrypted, message.as_bytes());
+
+            previous_frames.push(frame);
+
+            // Ratchet both endpoints forward
+            client.ratchet_rekey(&mut client_keys).unwrap();
+            server.ratchet_rekey(&mut server_keys).unwrap();
+
+            assert_eq!(client.metrics().rekeys_completed, generation as u64);
+            assert_eq!(server.metrics().rekeys_completed, generation as u64);
+        }
+
+        // Verify communication continues seamlessly after multiple ratchets
+        let final_msg = b"seamless-continuity-after-multiple-ratchets";
+        let frame_final = client.encrypt_packet(PacketType::Data, final_msg).unwrap();
+        let decrypted_final = server.decrypt_packet(&frame_final).unwrap();
+        assert_eq!(decrypted_final, final_msg);
+
+        // Forward secrecy check: old ciphertexts encrypted under previous key generations
+        // cannot be decrypted by an auditor session initialized with current (ratcheted) keys.
+        let mut ratcheted_auditor = Session::new_server();
+        ratcheted_auditor.establish(&server_keys).unwrap();
+        for old_frame in &previous_frames {
+            assert!(
+                ratcheted_auditor.decrypt_packet(old_frame).is_err(),
+                "Old frame from previous ratchet generation was decrypted by ratcheted session!"
+            );
+        }
+    }
 }
+
 
 

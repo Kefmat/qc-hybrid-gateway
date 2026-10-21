@@ -258,8 +258,8 @@ fn main() {
 
             // 3. Derive Session Keys
             let transcript = hash_transcript(&[&init_msg.to_bytes(), &resp_msg.to_bytes()]);
-            let client_keys = derive_session_keys(&client_shared_secret, &transcript);
-            let server_keys = derive_session_keys(&server_shared_secret, &transcript);
+            let mut client_keys = derive_session_keys(&client_shared_secret, &transcript);
+            let mut server_keys = derive_session_keys(&server_shared_secret, &transcript);
 
             let mut client_session = Session::new_client();
             let mut server_session = Session::new_server();
@@ -298,8 +298,21 @@ fn main() {
             let decrypted_resp = client_session.decrypt_packet(&rx_resp_frame).unwrap();
             println!("    [Server -> Client] (seq={}): {}", rx_resp_frame.seq(), String::from_utf8_lossy(&decrypted_resp));
 
-            // 5. Keepalive Ping/Pong & Latency Measurement
-            println!("[Step 4] Sending keepalive ping/pong frame for latency measurement...");
+            // 5. Symmetric Key Ratchet & Forward Secrecy Evolution
+            println!("[Step 4] Advancing symmetric key ratchet for zero-trust forward secrecy...");
+            client_session.ratchet_rekey(&mut client_keys).expect("Client ratchet failed");
+            server_session.ratchet_rekey(&mut server_keys).expect("Server ratchet failed");
+            println!("    [+] Both endpoints evolved write keys to generation 1 (rekeys={})", client_session.metrics().rekeys_completed);
+
+            let ratcheted_msg = "POST /api/v1/quantum-rekey/ack HTTP/1.1";
+            let ratcheted_frame = client_session.encrypt_packet(PacketType::Data, ratcheted_msg.as_bytes()).unwrap();
+            server_decoder.feed(&ratcheted_frame.encode());
+            let rx_ratcheted = server_decoder.decode_frame().unwrap().unwrap();
+            let decrypted_ratcheted = server_session.decrypt_packet(&rx_ratcheted).unwrap();
+            println!("    [Client -> Server (Ratcheted)] (seq={}): {}", rx_ratcheted.seq(), String::from_utf8_lossy(&decrypted_ratcheted));
+
+            // 6. Keepalive Ping/Pong & Latency Measurement
+            println!("[Step 5] Sending keepalive ping/pong frame for latency measurement...");
             let ping_ts = 123456789;
             let ping_frame = client_session.create_ping(ping_ts).unwrap();
             server_decoder.feed(&ping_frame.encode());
@@ -315,7 +328,7 @@ fn main() {
             let rtt = client_session.handle_pong(&rx_pong, ping_ts + simulated_rtt).unwrap();
             println!("    [+] Client received verified pong (measured RTT: {}ms)", rtt);
 
-            // 6. Graceful Teardown & Metrics
+            // 7. Graceful Teardown & Metrics
             client_session.close();
             server_session.close();
 

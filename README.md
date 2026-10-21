@@ -2,7 +2,7 @@
 
 [![Rust](https://img.shields.io/badge/rust-1.75%2B-orange.svg)](https://www.rust-lang.org/)
 [![License](https://img.shields.io/badge/license-MIT%2FApache--2.0-blue.svg)](Cargo.toml)
-[![Tests](https://img.shields.io/badge/tests-117%20passing-brightgreen.svg)](https://github.com/Kefmat/qc-hybrid-gateway)
+[![Tests](https://img.shields.io/badge/tests-121%20passing-brightgreen.svg)](https://github.com/Kefmat/qc-hybrid-gateway)
 [![PQC](https://img.shields.io/badge/NIST-FIPS%20203%20%7C%20FIPS%20204-purple.svg)](https://csrc.nist.gov/pubs/fips/203/final)
 
 A high-performance Post-Quantum Hybrid Cryptographic Gateway and Secure Tunnel engine written in Rust.
@@ -240,7 +240,8 @@ cargo run --release -- bench
 2. **Server Authentication**: The server encapsulates a shared secret against the client's public key, signs the ciphertext and nonce with its composite identity key (`ML-DSA-65` + `Ed25519`), and returns a `HandshakeResponse`.
 3. **Transcript Hash & Key Derivation**: Both peers compute `SHA-256` over the handshake transcript and derive unidirectional AEAD session write keys via `HKDF-SHA256`.
 4. **Encrypted Transport**: Application data is packaged into `Data` frames, encrypted using `ChaCha20-Poly1305` with sequential nonce counters and validated against sliding-window anti-replay filters.
-5. **Periodic Rekeying**: Upon reaching threshold packet counts, sessions transition through `Rekeying` to rotate session keys without dropping connectivity.
+5. **Forward Secrecy Key Ratcheting**: Sessions can advance symmetric write keys via one-way HKDF ratcheting (`Session::ratchet_rekey`), zeroizing past keys without requiring asymmetric KEM roundtrips.
+6. **Periodic Rekeying**: Upon reaching threshold packet counts or policy intervals, sessions transition through `Rekeying` to rotate session keys with fresh post-quantum entropy.
 
 ---
 
