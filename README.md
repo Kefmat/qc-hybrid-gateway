@@ -2,7 +2,7 @@
 
 [![Rust](https://img.shields.io/badge/rust-1.75%2B-orange.svg)](https://www.rust-lang.org/)
 [![License](https://img.shields.io/badge/license-MIT%2FApache--2.0-blue.svg)](Cargo.toml)
-[![Tests](https://img.shields.io/badge/tests-107%20passing-brightgreen.svg)](https://github.com/Kefmat/qc-hybrid-gateway)
+[![Tests](https://img.shields.io/badge/tests-117%20passing-brightgreen.svg)](https://github.com/Kefmat/qc-hybrid-gateway)
 [![PQC](https://img.shields.io/badge/NIST-FIPS%20203%20%7C%20FIPS%20204-purple.svg)](https://csrc.nist.gov/pubs/fips/203/final)
 
 A high-performance Post-Quantum Hybrid Cryptographic Gateway and Secure Tunnel engine written in Rust.
@@ -17,6 +17,7 @@ The gateway combines NIST-standardized Post-Quantum Cryptography (PQC) algorithm
 * **Post-Quantum Primitive**: **ML-KEM-768** (NIST FIPS 203 / Kyber-768)
 * **Classical Primitive**: **X25519 ECDH** (RFC 7748)
 * **Key Derivation**: Ephemeral shared secrets from both mechanisms are concatenated and passed through **HKDF-SHA256** (`PQC-HYBRID-GATEWAY-KEM-V1`), ensuring the resulting master secret remains secure as long as *at least one* primitive remains unbroken.
+* **Forward Secrecy Key Ratcheting**: Continuous symmetric ratchet step derivation (`PQC-HYBRID-GATEWAY-RATCHET-V1`) advancing session write keys with automatic zeroization of past keys.
 
 ### 2. Hybrid Signatures & Identity Provenance
 * **Post-Quantum Primitive**: **ML-DSA-65** (NIST FIPS 204 / Dilithium3)
@@ -29,6 +30,7 @@ The gateway combines NIST-standardized Post-Quantum Cryptography (PQC) algorithm
 * **Wire Protocol Framing**: Versioned binary framing (`PacketHeader`, `PacketFrame`, `PacketType`) with sequence indexing and payload bounds.
 * **Stream Codec**: Incremental buffer frame parser (`FrameDecoder`) supporting chunked streaming and multi-frame processing.
 * **Session State Machine**: Comprehensive lifecycle tracking (`Session`, `SessionRole`, `SessionState`) with sequence counters and rekey triggers.
+* **Keepalive & Latency Telemetry**: Bidirectional Ping/Pong heartbeat frames with millisecond RTT measurement and structured telemetry reporting.
 * **Anti-Replay Defense**: Sliding-window bitmask filter detecting replayed and out-of-order packets.
 * **Memory Safety**: Automatic secret key zeroization on drop (`zeroize`).
 
@@ -65,7 +67,7 @@ All network communication uses a fixed 14-byte binary header followed by the var
 | Field | Offset | Length | Type | Description |
 |:---|:---|:---|:---|:---|
 | `version` | 0 | 1 byte | `u8` | Protocol version (`0x01`) |
-| `packet_type` | 1 | 1 byte | `u8` | `0x01` (HandshakeInit), `0x02` (HandshakeResp), `0x03` (Data), `0x04` (Ping) |
+| `packet_type` | 1 | 1 byte | `u8` | `0x01` (HandshakeInit), `0x02` (HandshakeResp), `0x03` (Data), `0x04` (Ping), `0x05` (Pong) |
 | `seq` | 2..10 | 8 bytes | `u64` (big-endian) | Monotonically increasing sequence counter |
 | `payload_len` | 10..14 | 4 bytes | `u32` (big-endian) | Payload length in bytes (max 65536 bytes) |
 | `payload` | 14.. | Variable | `[u8]` | Encrypted ciphertext or raw handshake payload |
@@ -211,9 +213,17 @@ cargo run -- keygen
 ```
 
 ### Interactive Tunnel Simulation
-Simulate a complete end-to-end client-server handshake, streaming frame exchange, keepalive ping/pong, and telemetry reporting:
+Simulate a complete end-to-end client-server handshake, streaming frame exchange, keepalive ping/pong with RTT latency measurement, and telemetry reporting:
 ```bash
+# Standard simulation
 cargo run -- tunnel
+
+# With network simulation (simulated latency and packet drops)
+cargo run -- tunnel --latency-ms 20 --drop-rate 5
+
+# With formatted telemetry report or JSON export
+cargo run -- tunnel --report
+cargo run -- tunnel --json
 ```
 
 ### Micro-benchmarks

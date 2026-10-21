@@ -39,6 +39,12 @@ enum Commands {
         /// Simulated network latency in milliseconds
         #[arg(short, long, default_value_t = 0)]
         latency_ms: u64,
+        /// Display full formatted session telemetry reports
+        #[arg(short, long)]
+        report: bool,
+        /// Output session telemetry formatted as JSON
+        #[arg(short, long)]
+        json: bool,
     },
     /// Display cryptographic parameters and architectural specification
     Info,
@@ -225,7 +231,7 @@ fn main() {
             let aead_dec_dur = start.elapsed();
             println!("AEAD Decrypt (1KB):      {:?} per op", aead_dec_dur / aead_iters);
         }
-        Commands::Tunnel { drop_rate, latency_ms } => {
+        Commands::Tunnel { drop_rate, latency_ms, report, json } => {
             println!("=== Post-Quantum Hybrid Gateway: Tunnel Simulation ===");
             if drop_rate > 0 || latency_ms > 0 {
                 println!("  [Simulation Profile] Simulated Latency: {}ms | Drop Rate: {}%", latency_ms, drop_rate);
@@ -292,26 +298,46 @@ fn main() {
             let decrypted_resp = client_session.decrypt_packet(&rx_resp_frame).unwrap();
             println!("    [Server -> Client] (seq={}): {}", rx_resp_frame.seq(), String::from_utf8_lossy(&decrypted_resp));
 
-            // 5. Keepalive Ping/Pong
-            println!("[Step 4] Sending keepalive ping frame...");
-            let ping_frame = client_session.create_ping(123456789).unwrap();
+            // 5. Keepalive Ping/Pong & Latency Measurement
+            println!("[Step 4] Sending keepalive ping/pong frame for latency measurement...");
+            let ping_ts = 123456789;
+            let ping_frame = client_session.create_ping(ping_ts).unwrap();
             server_decoder.feed(&ping_frame.encode());
             let rx_ping = server_decoder.decode_frame().unwrap().unwrap();
-            let ping_ts = server_session.handle_ping(&rx_ping).unwrap();
-            println!("    [+] Server received verified ping with timestamp: {}", ping_ts);
+            let server_ping_ts = server_session.handle_ping(&rx_ping).unwrap();
+            println!("    [+] Server received verified ping with timestamp: {}", server_ping_ts);
+
+            // Server responds with Pong
+            let pong_frame = server_session.create_pong(server_ping_ts).unwrap();
+            client_decoder.feed(&pong_frame.encode());
+            let rx_pong = client_decoder.decode_frame().unwrap().unwrap();
+            let simulated_rtt = latency_ms * 2 + 4;
+            let rtt = client_session.handle_pong(&rx_pong, ping_ts + simulated_rtt).unwrap();
+            println!("    [+] Client received verified pong (measured RTT: {}ms)", rtt);
 
             // 6. Graceful Teardown & Metrics
             client_session.close();
             server_session.close();
-            println!("    - Client: {}", client_session.metrics());
-            if let Some(avg) = client_session.metrics().average_packet_size() {
-                println!("      * Client Average Packet Size: {} bytes (Total: {} bytes, {} packets)",
-                    avg, client_session.metrics().total_bytes(), client_session.metrics().total_packets());
-            }
-            println!("    - Server: {}", server_session.metrics());
-            if let Some(avg) = server_session.metrics().average_packet_size() {
-                println!("      * Server Average Packet Size: {} bytes (Total: {} bytes, {} packets)",
-                    avg, server_session.metrics().total_bytes(), server_session.metrics().total_packets());
+
+            if json {
+                println!("\n--- Session Telemetry (JSON Export) ---");
+                println!("Client: {}", client_session.telemetry_json());
+                println!("Server: {}", server_session.telemetry_json());
+            } else if report {
+                println!("\n--- Session Telemetry Report ---");
+                println!("Client:\n{}", client_session.telemetry_report());
+                println!("\nServer:\n{}", server_session.telemetry_report());
+            } else {
+                println!("    - Client: {}", client_session.metrics());
+                if let Some(avg) = client_session.metrics().average_packet_size() {
+                    println!("      * Client Average Packet Size: {} bytes (Total: {} bytes, {} packets)",
+                        avg, client_session.metrics().total_bytes(), client_session.metrics().total_packets());
+                }
+                println!("    - Server: {}", server_session.metrics());
+                if let Some(avg) = server_session.metrics().average_packet_size() {
+                    println!("      * Server Average Packet Size: {} bytes (Total: {} bytes, {} packets)",
+                        avg, server_session.metrics().total_bytes(), server_session.metrics().total_packets());
+                }
             }
             println!("=== Tunnel Simulation Succeeded ===");
         }
