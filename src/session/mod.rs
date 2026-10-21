@@ -599,6 +599,54 @@ impl Session {
         Ok(())
     }
 
+    /// Advances the session keys by one symmetric ratchet step and immediately re-keys
+    /// the session ciphers in place, enforcing forward secrecy without asymmetric roundtrips.
+    pub fn ratchet_rekey(&mut self, keys: &mut SessionKeys) -> Result<(), String> {
+        if !matches!(self.state, SessionState::Established | SessionState::Rekeying) {
+            return Err(format!("Cannot ratchet rekey in state: {}", self.state));
+        }
+
+        keys.ratchet();
+
+        let (tx_key, rx_key) = match self.role {
+            SessionRole::Client => (keys.client_write_key(), keys.server_write_key()),
+            SessionRole::Server => (keys.server_write_key(), keys.client_write_key()),
+        };
+
+        self.tx_cipher = Some(AeadCipher::new(tx_key));
+        self.rx_cipher = Some(AeadCipher::new(rx_key));
+        self.state = SessionState::Established;
+        self.tx_seq = 0;
+        self.rx_filter.reset();
+        self.metrics.rekeys_completed += 1;
+
+        Ok(())
+    }
+
+    /// Advances the session keys by one symmetric ratchet step bound with an external salt
+    /// and immediately re-keys the session ciphers in place.
+    pub fn ratchet_rekey_with_salt(&mut self, keys: &mut SessionKeys, salt: &[u8]) -> Result<(), String> {
+        if !matches!(self.state, SessionState::Established | SessionState::Rekeying) {
+            return Err(format!("Cannot ratchet rekey in state: {}", self.state));
+        }
+
+        keys.ratchet_with_salt(salt);
+
+        let (tx_key, rx_key) = match self.role {
+            SessionRole::Client => (keys.client_write_key(), keys.server_write_key()),
+            SessionRole::Server => (keys.server_write_key(), keys.client_write_key()),
+        };
+
+        self.tx_cipher = Some(AeadCipher::new(tx_key));
+        self.rx_cipher = Some(AeadCipher::new(rx_key));
+        self.state = SessionState::Established;
+        self.tx_seq = 0;
+        self.rx_filter.reset();
+        self.metrics.rekeys_completed += 1;
+
+        Ok(())
+    }
+
     pub fn close(&mut self) {
         self.state = SessionState::Closed;
         self.tx_cipher = None;
@@ -1169,7 +1217,76 @@ mod tests {
         assert!(summary.contains("state=Established"));
         assert!(summary.contains("tx_seq=8"));
     }
+
+    #[test]
+    fn test_session_ratchet_rekey_lifecycle_and_forward_secrecy() {
+        let mut client = Session::new_client();
+        let mut server = Session::new_server();
+
+        let mut client_keys = SessionKeys::new([0x33u8; 32], [0x44u8; 32]);
+        let mut server_keys = SessionKeys::new([0x33u8; 32], [0x44u8; 32]);
+
+        client.establish(&client_keys).unwrap();
+        server.establish(&server_keys).unwrap();
+
+        // Send packet under generation 0
+        let frame0 = client.encrypt_packet(PacketType::Data, b"pre-ratchet-secret").unwrap();
+        let decrypted0 = server.decrypt_packet(&frame0).unwrap();
+        assert_eq!(decrypted0, b"pre-ratchet-secret");
+
+        // Ratchet both sessions
+        assert!(client.ratchet_rekey(&mut client_keys).is_ok());
+        assert!(server.ratchet_rekey(&mut server_keys).is_ok());
+
+        assert_eq!(client.state(), SessionState::Established);
+        assert_eq!(server.state(), SessionState::Established);
+        assert_eq!(client.tx_seq(), 0);
+        assert_eq!(client.metrics().rekeys_completed, 1);
+        assert_eq!(server.metrics().rekeys_completed, 1);
+
+        // Send packet under generation 1
+        let frame1 = client.encrypt_packet(PacketType::Data, b"post-ratchet-secret").unwrap();
+        let decrypted1 = server.decrypt_packet(&frame1).unwrap();
+        assert_eq!(decrypted1, b"post-ratchet-secret");
+
+        // Forward secrecy check: old ciphertext frame0 cannot be decrypted by server after ratchet
+        assert!(server.decrypt_packet(&frame0).is_err());
+    }
+
+    #[test]
+    fn test_session_ratchet_rekey_with_salt() {
+        let mut client = Session::new_client();
+        let mut server = Session::new_server();
+
+        let mut client_keys = SessionKeys::new([0x55u8; 32], [0x66u8; 32]);
+        let mut server_keys = SessionKeys::new([0x55u8; 32], [0x66u8; 32]);
+
+        client.establish(&client_keys).unwrap();
+        server.establish(&server_keys).unwrap();
+
+        let salt = b"custom-session-salt-v1";
+        client.ratchet_rekey_with_salt(&mut client_keys, salt).unwrap();
+        server.ratchet_rekey_with_salt(&mut server_keys, salt).unwrap();
+
+        let frame = client.encrypt_packet(PacketType::Data, b"salted-ratchet-message").unwrap();
+        let decrypted = server.decrypt_packet(&frame).unwrap();
+        assert_eq!(decrypted, b"salted-ratchet-message");
+    }
+
+    #[test]
+    fn test_session_ratchet_rekey_invalid_state() {
+        let mut uninit_session = Session::new_client();
+        let mut keys = SessionKeys::new([1u8; 32], [2u8; 32]);
+        assert!(uninit_session.ratchet_rekey(&mut keys).is_err());
+
+        let mut closed_session = Session::new_client();
+        closed_session.establish(&keys).unwrap();
+        closed_session.close();
+        assert!(closed_session.ratchet_rekey(&mut keys).is_err());
+        assert!(closed_session.ratchet_rekey_with_salt(&mut keys, b"salt").is_err());
+    }
 }
+
 
 
 
