@@ -19,6 +19,7 @@ pub enum PacketType {
     HandshakeResp = 0x02,
     Data = 0x03,
     Ping = 0x04,
+    Pong = 0x05,
 }
 
 impl PacketType {
@@ -33,6 +34,14 @@ impl PacketType {
     pub const fn is_ping(&self) -> bool {
         matches!(self, PacketType::Ping)
     }
+
+    pub const fn is_pong(&self) -> bool {
+        matches!(self, PacketType::Pong)
+    }
+
+    pub const fn is_heartbeat(&self) -> bool {
+        matches!(self, PacketType::Ping | PacketType::Pong)
+    }
 }
 
 impl fmt::Display for PacketType {
@@ -43,6 +52,7 @@ impl fmt::Display for PacketType {
             PacketType::HandshakeResp => write!(f, "HandshakeResp"),
             PacketType::Data => write!(f, "Data"),
             PacketType::Ping => write!(f, "Ping"),
+            PacketType::Pong => write!(f, "Pong"),
         }
     }
 }
@@ -56,6 +66,7 @@ impl TryFrom<u8> for PacketType {
             0x02 => Ok(PacketType::HandshakeResp),
             0x03 => Ok(PacketType::Data),
             0x04 => Ok(PacketType::Ping),
+            0x05 => Ok(PacketType::Pong),
             _ => Err(format!("Unknown packet type: 0x{:02x}", value)),
         }
     }
@@ -160,6 +171,14 @@ impl PacketHeader {
         self.packet_type.is_ping()
     }
 
+    pub const fn is_pong(&self) -> bool {
+        self.packet_type.is_pong()
+    }
+
+    pub const fn is_heartbeat(&self) -> bool {
+        self.packet_type.is_heartbeat()
+    }
+
     pub const fn is_empty(&self) -> bool {
         self.payload_len == 0
     }
@@ -170,6 +189,10 @@ impl PacketHeader {
 
     pub fn ping(seq: u64) -> Result<Self, String> {
         Self::new(PacketType::Ping, seq, 8)
+    }
+
+    pub fn pong(seq: u64) -> Result<Self, String> {
+        Self::new(PacketType::Pong, seq, 8)
     }
 
     pub fn handshake_init(seq: u64, payload_len: u32) -> Result<Self, String> {
@@ -243,6 +266,14 @@ impl PacketFrame {
         self.header.is_ping()
     }
 
+    pub const fn is_pong(&self) -> bool {
+        self.header.is_pong()
+    }
+
+    pub const fn is_heartbeat(&self) -> bool {
+        self.header.is_heartbeat()
+    }
+
     pub fn seq(&self) -> u64 {
         self.header.seq
     }
@@ -301,6 +332,10 @@ impl PacketFrame {
 
     pub fn ping(seq: u64, timestamp: u64) -> Result<Self, String> {
         Self::new(PacketType::Ping, seq, timestamp.to_be_bytes().to_vec())
+    }
+
+    pub fn pong(seq: u64, timestamp: u64) -> Result<Self, String> {
+        Self::new(PacketType::Pong, seq, timestamp.to_be_bytes().to_vec())
     }
 
     pub fn handshake_init(seq: u64, payload: Vec<u8>) -> Result<Self, String> {
@@ -451,11 +486,23 @@ mod tests {
         assert!(PacketType::Data.is_data());
         assert!(!PacketType::Ping.is_data());
         assert!(PacketType::Ping.is_ping());
+        assert!(PacketType::Ping.is_heartbeat());
+        assert!(PacketType::Pong.is_pong());
+        assert!(PacketType::Pong.is_heartbeat());
+        assert!(!PacketType::Pong.is_ping());
+        assert!(!PacketType::Data.is_heartbeat());
 
         let frame = PacketFrame::new(PacketType::HandshakeInit, 1, vec![]).unwrap();
         assert!(frame.is_handshake());
         assert!(!frame.is_data());
         assert!(!frame.is_ping());
+        assert!(!frame.is_pong());
+        assert!(!frame.is_heartbeat());
+
+        let pong_frame = PacketFrame::pong(2, 12345).unwrap();
+        assert!(pong_frame.is_pong());
+        assert!(pong_frame.is_heartbeat());
+        assert_eq!(pong_frame.packet_type(), PacketType::Pong);
     }
 
     #[test]
@@ -537,6 +584,8 @@ mod tests {
     fn test_display_implementations() {
         assert_eq!(PacketType::HandshakeInit.to_string(), "HandshakeInit");
         assert_eq!(PacketType::Data.to_string(), "Data");
+        assert_eq!(PacketType::Ping.to_string(), "Ping");
+        assert_eq!(PacketType::Pong.to_string(), "Pong");
 
         let header = PacketHeader {
             version: 1,

@@ -190,6 +190,9 @@ pub struct SessionMetrics {
     pub rx_bytes: u64,
     pub replays_dropped: u64,
     pub rekeys_completed: u64,
+    pub pings_sent: u64,
+    pub pongs_received: u64,
+    pub last_rtt_ms: Option<u64>,
 }
 
 impl SessionMetrics {
@@ -207,11 +210,7 @@ impl SessionMetrics {
 
     pub fn average_packet_size(&self) -> Option<usize> {
         let total_pkts = self.total_packets();
-        if total_pkts == 0 {
-            None
-        } else {
-            Some((self.total_bytes() / total_pkts) as usize)
-        }
+        self.total_bytes().checked_div(total_pkts).map(|avg| avg as usize)
     }
 
     pub fn has_traffic(&self) -> bool {
@@ -229,17 +228,29 @@ impl SessionMetrics {
         self.rx_bytes = self.rx_bytes.saturating_add(other.rx_bytes);
         self.replays_dropped = self.replays_dropped.saturating_add(other.replays_dropped);
         self.rekeys_completed = self.rekeys_completed.saturating_add(other.rekeys_completed);
+        self.pings_sent = self.pings_sent.saturating_add(other.pings_sent);
+        self.pongs_received = self.pongs_received.saturating_add(other.pongs_received);
+        if other.last_rtt_ms.is_some() {
+            self.last_rtt_ms = other.last_rtt_ms;
+        }
     }
 
     pub fn to_json(&self) -> String {
+        let rtt_val = match self.last_rtt_ms {
+            Some(ms) => ms.to_string(),
+            None => "null".to_string(),
+        };
         format!(
-            r#"{{"tx_packets":{},"rx_packets":{},"tx_bytes":{},"rx_bytes":{},"replays_dropped":{},"rekeys_completed":{},"total_packets":{},"total_bytes":{}}}"#,
+            r#"{{"tx_packets":{},"rx_packets":{},"tx_bytes":{},"rx_bytes":{},"replays_dropped":{},"rekeys_completed":{},"pings_sent":{},"pongs_received":{},"last_rtt_ms":{},"total_packets":{},"total_bytes":{}}}"#,
             self.tx_packets,
             self.rx_packets,
             self.tx_bytes,
             self.rx_bytes,
             self.replays_dropped,
             self.rekeys_completed,
+            self.pings_sent,
+            self.pongs_received,
+            rtt_val,
             self.total_packets(),
             self.total_bytes(),
         )
@@ -250,14 +261,21 @@ impl SessionMetrics {
             Some(avg) => format!("{} bytes", avg),
             None => "N/A".to_string(),
         };
+        let rtt_str = match self.last_rtt_ms {
+            Some(rtt) => format!("{} ms", rtt),
+            None => "N/A".to_string(),
+        };
         format!(
-            "Session Telemetry Report:\n  - TX: {} packets ({} bytes)\n  - RX: {} packets ({} bytes)\n  - Replays Dropped: {}\n  - Rekeys Completed: {}\n  - Average Packet Size: {}",
+            "Session Telemetry Report:\n  - TX: {} packets ({} bytes)\n  - RX: {} packets ({} bytes)\n  - Replays Dropped: {}\n  - Rekeys Completed: {}\n  - Pings Sent / Pongs Received: {} / {}\n  - Last RTT: {}\n  - Average Packet Size: {}",
             self.tx_packets,
             self.tx_bytes,
             self.rx_packets,
             self.rx_bytes,
             self.replays_dropped,
             self.rekeys_completed,
+            self.pings_sent,
+            self.pongs_received,
+            rtt_str,
             avg_str
         )
     }
@@ -280,15 +298,22 @@ impl std::ops::AddAssign for SessionMetrics {
 
 impl fmt::Display for SessionMetrics {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let rtt_str = match self.last_rtt_ms {
+            Some(rtt) => format!("{}ms", rtt),
+            None => "none".to_string(),
+        };
         write!(
             f,
-            "SessionMetrics(tx_pkts={}, rx_pkts={}, tx_bytes={}, rx_bytes={}, dropped={}, rekeys={})",
+            "SessionMetrics(tx_pkts={}, rx_pkts={}, tx_bytes={}, rx_bytes={}, dropped={}, rekeys={}, pings={}, pongs={}, rtt={})",
             self.tx_packets,
             self.rx_packets,
             self.tx_bytes,
             self.rx_bytes,
             self.replays_dropped,
-            self.rekeys_completed
+            self.rekeys_completed,
+            self.pings_sent,
+            self.pongs_received,
+            rtt_str
         )
     }
 }
@@ -502,7 +527,9 @@ impl Session {
     }
 
     pub fn create_ping(&mut self, timestamp: u64) -> Result<PacketFrame, String> {
-        self.encrypt_packet(PacketType::Ping, &timestamp.to_be_bytes())
+        let frame = self.encrypt_packet(PacketType::Ping, &timestamp.to_be_bytes())?;
+        self.metrics.pings_sent += 1;
+        Ok(frame)
     }
 
     pub fn handle_ping(&mut self, frame: &PacketFrame) -> Result<u64, String> {
@@ -516,6 +543,28 @@ impl Session {
         }
 
         Ok(u64::from_be_bytes(decrypted[..8].try_into().unwrap()))
+    }
+
+    pub fn create_pong(&mut self, timestamp: u64) -> Result<PacketFrame, String> {
+        self.encrypt_packet(PacketType::Pong, &timestamp.to_be_bytes())
+    }
+
+    pub fn handle_pong(&mut self, frame: &PacketFrame, current_timestamp: u64) -> Result<u64, String> {
+        if frame.packet_type() != PacketType::Pong {
+            return Err(format!("Expected Pong packet, received: {}", frame.packet_type()));
+        }
+
+        let decrypted = self.decrypt_packet(frame)?;
+        if decrypted.len() != 8 {
+            return Err(format!("Invalid pong payload size: {} bytes (expected 8)", decrypted.len()));
+        }
+
+        let sent_time = u64::from_be_bytes(decrypted[..8].try_into().unwrap());
+        let rtt = current_timestamp.saturating_sub(sent_time);
+        self.metrics.pongs_received += 1;
+        self.metrics.last_rtt_ms = Some(rtt);
+
+        Ok(rtt)
     }
 
     pub fn is_rekey_needed(&self) -> bool {
@@ -816,9 +865,38 @@ mod tests {
         let timestamp = 1727784000;
         let ping_frame = client.create_ping(timestamp).unwrap();
         assert!(ping_frame.is_ping());
+        assert!(ping_frame.is_heartbeat());
+        assert_eq!(client.metrics().pings_sent, 1);
 
         let received_timestamp = server.handle_ping(&ping_frame).unwrap();
         assert_eq!(received_timestamp, timestamp);
+
+        // Server responds with Pong
+        let pong_frame = server.create_pong(received_timestamp).unwrap();
+        assert!(pong_frame.is_pong());
+        assert!(pong_frame.is_heartbeat());
+
+        // Client processes Pong and calculates RTT
+        let current_time = timestamp + 12; // 12ms later
+        let rtt = client.handle_pong(&pong_frame, current_time).unwrap();
+        assert_eq!(rtt, 12);
+        assert_eq!(client.metrics().pongs_received, 1);
+        assert_eq!(client.metrics().last_rtt_ms, Some(12));
+    }
+
+    #[test]
+    fn test_session_pong_validation_errors() {
+        let mut client = Session::new_client();
+        let mut server = Session::new_server();
+        let keys = SessionKeys::new([10u8; 32], [20u8; 32]);
+        client.establish(&keys).unwrap();
+        server.establish(&keys).unwrap();
+
+        let data_frame = client.encrypt_packet(PacketType::Data, b"not-a-pong").unwrap();
+        assert!(server.handle_pong(&data_frame, 100).is_err());
+
+        let bad_pong_frame = client.encrypt_packet(PacketType::Pong, b"short").unwrap();
+        assert!(server.handle_pong(&bad_pong_frame, 100).is_err());
     }
 
     #[test]
@@ -918,25 +996,37 @@ mod tests {
             rx_bytes: 2000,
             replays_dropped: 2,
             rekeys_completed: 1,
+            pings_sent: 3,
+            pongs_received: 3,
+            last_rtt_ms: Some(15),
         };
         let s = metrics.to_string();
         assert_eq!(
             s,
-            "SessionMetrics(tx_pkts=10, rx_pkts=20, tx_bytes=1000, rx_bytes=2000, dropped=2, rekeys=1)"
+            "SessionMetrics(tx_pkts=10, rx_pkts=20, tx_bytes=1000, rx_bytes=2000, dropped=2, rekeys=1, pings=3, pongs=3, rtt=15ms)"
         );
         assert_eq!(metrics.average_packet_size(), Some(100)); // (1000 + 2000) / (10 + 20) = 100
 
         let empty_metrics = SessionMetrics::default();
         assert_eq!(empty_metrics.average_packet_size(), None);
+        assert_eq!(
+            empty_metrics.to_string(),
+            "SessionMetrics(tx_pkts=0, rx_pkts=0, tx_bytes=0, rx_bytes=0, dropped=0, rekeys=0, pings=0, pongs=0, rtt=none)"
+        );
 
         let json = metrics.to_json();
         assert!(json.contains("\"tx_packets\":10"));
         assert!(json.contains("\"rx_packets\":20"));
         assert!(json.contains("\"rekeys_completed\":1"));
+        assert!(json.contains("\"pings_sent\":3"));
+        assert!(json.contains("\"pongs_received\":3"));
+        assert!(json.contains("\"last_rtt_ms\":15"));
 
         let report = metrics.to_report();
         assert!(report.contains("Session Telemetry Report"));
         assert!(report.contains("TX: 10 packets"));
+        assert!(report.contains("Pings Sent / Pongs Received: 3 / 3"));
+        assert!(report.contains("Last RTT: 15 ms"));
         assert!(report.contains("Average Packet Size: 100 bytes"));
 
         let mut session = Session::new_client();
@@ -1014,6 +1104,9 @@ mod tests {
             rx_bytes: 250,
             replays_dropped: 1,
             rekeys_completed: 1,
+            pings_sent: 2,
+            pongs_received: 1,
+            last_rtt_ms: Some(10),
         };
         let m2 = SessionMetrics {
             tx_packets: 20,
@@ -1022,6 +1115,9 @@ mod tests {
             rx_bytes: 750,
             replays_dropped: 2,
             rekeys_completed: 1,
+            pings_sent: 1,
+            pongs_received: 2,
+            last_rtt_ms: Some(25),
         };
 
         let mut combined = m1.clone();
@@ -1032,6 +1128,9 @@ mod tests {
         assert_eq!(combined.rx_bytes, 1000);
         assert_eq!(combined.replays_dropped, 3);
         assert_eq!(combined.rekeys_completed, 2);
+        assert_eq!(combined.pings_sent, 3);
+        assert_eq!(combined.pongs_received, 3);
+        assert_eq!(combined.last_rtt_ms, Some(25));
 
         // Test std::ops::Add
         let added = m1.clone() + m2.clone();
