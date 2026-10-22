@@ -47,6 +47,10 @@ impl HybridKemPublicKey {
         self.kyber_pk.as_bytes()
     }
 
+    pub fn as_parts(&self) -> (&[u8; X25519_KEY_SIZE], &KyberPublicKey) {
+        (&self.x25519_pk, &self.kyber_pk)
+    }
+
     pub fn into_parts(self) -> ([u8; X25519_KEY_SIZE], KyberPublicKey) {
         (self.x25519_pk, self.kyber_pk)
     }
@@ -167,6 +171,10 @@ impl HybridKemCiphertext {
         self.kyber_ct.as_bytes()
     }
 
+    pub fn as_parts(&self) -> (&[u8; X25519_KEY_SIZE], &KyberCiphertext) {
+        (&self.x25519_ephemeral_pk, &self.kyber_ct)
+    }
+
     pub fn into_parts(self) -> ([u8; X25519_KEY_SIZE], KyberCiphertext) {
         (self.x25519_ephemeral_pk, self.kyber_ct)
     }
@@ -246,6 +254,10 @@ impl HybridKemKeyPair {
 
     pub fn secret_key(&self) -> &HybridKemSecretKey {
         &self.secret_key
+    }
+
+    pub fn as_parts(&self) -> (&HybridKemPublicKey, &HybridKemSecretKey) {
+        (&self.public_key, &self.secret_key)
     }
 
     pub fn into_parts(self) -> (HybridKemPublicKey, HybridKemSecretKey) {
@@ -405,6 +417,23 @@ mod tests {
         assert_eq!(x_pk.len(), X25519_KEY_SIZE);
         assert_eq!(kyber_pk.as_bytes().len(), 1184); // Kyber768 public key size
         assert_eq!(sk.x25519_sk().len(), X25519_KEY_SIZE);
+    }
+
+    #[test]
+    fn test_kem_as_parts_accessors() {
+        let pair = HybridKemKeyPair::generate();
+        let (pk_ref, sk_ref) = pair.as_parts();
+        assert_eq!(pk_ref.x25519_pk(), pair.public_key().x25519_pk());
+        assert_eq!(sk_ref.x25519_sk(), pair.secret_key().x25519_sk());
+
+        let (x_pk, kyber_pk) = pair.public_key().as_parts();
+        assert_eq!(x_pk, pair.public_key().x25519_pk());
+        assert_eq!(kyber_pk.as_bytes(), pair.public_key().kyber_pk_bytes());
+
+        let (ct, _) = encapsulate_hybrid(pair.public_key());
+        let (x_ephem, kyber_ct) = ct.as_parts();
+        assert_eq!(x_ephem, ct.x25519_ephemeral_pk());
+        assert_eq!(kyber_ct.as_bytes(), ct.kyber_ct_bytes());
     }
 }
 
