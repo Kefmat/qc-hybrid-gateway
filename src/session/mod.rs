@@ -108,6 +108,13 @@ pub enum SessionRole {
 }
 
 impl SessionRole {
+    pub const fn as_str(&self) -> &'static str {
+        match self {
+            SessionRole::Client => "Client",
+            SessionRole::Server => "Server",
+        }
+    }
+
     pub const fn is_client(&self) -> bool {
         matches!(self, SessionRole::Client)
     }
@@ -124,12 +131,15 @@ impl SessionRole {
     }
 }
 
+impl AsRef<str> for SessionRole {
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
+}
+
 impl fmt::Display for SessionRole {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            SessionRole::Client => write!(f, "Client"),
-            SessionRole::Server => write!(f, "Server"),
-        }
+        write!(f, "{}", self.as_str())
     }
 }
 
@@ -143,6 +153,36 @@ pub enum SessionState {
 }
 
 impl SessionState {
+    pub const fn as_str(&self) -> &'static str {
+        match self {
+            SessionState::Uninitialized => "Uninitialized",
+            SessionState::Handshaking => "Handshaking",
+            SessionState::Established => "Established",
+            SessionState::Rekeying => "Rekeying",
+            SessionState::Closed => "Closed",
+        }
+    }
+
+    pub const fn is_uninitialized(&self) -> bool {
+        matches!(self, SessionState::Uninitialized)
+    }
+
+    pub const fn is_handshaking(&self) -> bool {
+        matches!(self, SessionState::Handshaking)
+    }
+
+    pub const fn is_established(&self) -> bool {
+        matches!(self, SessionState::Established)
+    }
+
+    pub const fn is_rekeying(&self) -> bool {
+        matches!(self, SessionState::Rekeying)
+    }
+
+    pub const fn is_closed(&self) -> bool {
+        matches!(self, SessionState::Closed)
+    }
+
     pub const fn is_active(&self) -> bool {
         matches!(
             self,
@@ -170,15 +210,15 @@ impl SessionState {
     }
 }
 
+impl AsRef<str> for SessionState {
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
+}
+
 impl fmt::Display for SessionState {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            SessionState::Uninitialized => write!(f, "Uninitialized"),
-            SessionState::Handshaking => write!(f, "Handshaking"),
-            SessionState::Established => write!(f, "Established"),
-            SessionState::Rekeying => write!(f, "Rekeying"),
-            SessionState::Closed => write!(f, "Closed"),
-        }
+        write!(f, "{}", self.as_str())
     }
 }
 
@@ -714,14 +754,36 @@ mod tests {
 
     #[test]
     fn test_session_state_display() {
+        assert_eq!(SessionRole::Client.as_str(), "Client");
+        assert_eq!(SessionRole::Server.as_str(), "Server");
+        assert_eq!(SessionRole::Client.as_ref(), "Client");
+        assert_eq!(SessionRole::Server.as_ref(), "Server");
         assert_eq!(SessionRole::Client.to_string(), "Client");
         assert_eq!(SessionRole::Server.to_string(), "Server");
+
+        assert_eq!(SessionState::Uninitialized.as_str(), "Uninitialized");
+        assert_eq!(SessionState::Handshaking.as_str(), "Handshaking");
+        assert_eq!(SessionState::Established.as_str(), "Established");
+        assert_eq!(SessionState::Rekeying.as_str(), "Rekeying");
+        assert_eq!(SessionState::Closed.as_str(), "Closed");
+        assert_eq!(SessionState::Established.as_ref(), "Established");
 
         assert_eq!(SessionState::Uninitialized.to_string(), "Uninitialized");
         assert_eq!(SessionState::Handshaking.to_string(), "Handshaking");
         assert_eq!(SessionState::Established.to_string(), "Established");
         assert_eq!(SessionState::Rekeying.to_string(), "Rekeying");
         assert_eq!(SessionState::Closed.to_string(), "Closed");
+
+        assert!(SessionState::Uninitialized.is_uninitialized());
+        assert!(!SessionState::Uninitialized.is_handshaking());
+        assert!(SessionState::Handshaking.is_handshaking());
+        assert!(!SessionState::Handshaking.is_established());
+        assert!(SessionState::Established.is_established());
+        assert!(!SessionState::Established.is_rekeying());
+        assert!(SessionState::Rekeying.is_rekeying());
+        assert!(!SessionState::Rekeying.is_closed());
+        assert!(SessionState::Closed.is_closed());
+        assert!(!SessionState::Closed.is_uninitialized());
 
         assert!(!SessionState::Uninitialized.is_active());
         assert!(SessionState::Handshaking.is_active());
