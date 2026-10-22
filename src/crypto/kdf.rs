@@ -191,6 +191,31 @@ impl std::fmt::Debug for SessionKeys {
     }
 }
 
+impl Clone for SessionKeys {
+    fn clone(&self) -> Self {
+        Self {
+            client_write_key: self.client_write_key,
+            server_write_key: self.server_write_key,
+        }
+    }
+}
+
+impl PartialEq for SessionKeys {
+    fn eq(&self, other: &Self) -> bool {
+        self.constant_time_eq(other)
+    }
+}
+
+impl Eq for SessionKeys {}
+
+impl TryFrom<(&[u8], &[u8])> for SessionKeys {
+    type Error = String;
+
+    fn try_from(slices: (&[u8], &[u8])) -> Result<Self, Self::Error> {
+        Self::try_from_slices(slices.0, slices.1)
+    }
+}
+
 impl Default for SessionKeys {
     fn default() -> Self {
         Self::zeroed()
@@ -464,5 +489,21 @@ mod tests {
 
         assert_ne!(keys1.client_write_key(), keys2.client_write_key());
         assert_ne!(keys1.server_write_key(), keys2.server_write_key());
+    }
+
+    #[test]
+    fn test_session_keys_traits_eq_clone_try_from() {
+        let keys1 = SessionKeys::new([0x12u8; 32], [0x34u8; 32]);
+        let cloned = keys1.clone();
+        assert_eq!(keys1, cloned);
+
+        let keys2 = SessionKeys::new([0x12u8; 32], [0x35u8; 32]);
+        assert_ne!(keys1, keys2);
+
+        let from_tuple = SessionKeys::try_from((&[0x12u8; 32][..], &[0x34u8; 32][..])).unwrap();
+        assert_eq!(keys1, from_tuple);
+
+        let bad_tuple = SessionKeys::try_from((&[1u8, 2][..], &[0x34u8; 32][..]));
+        assert!(bad_tuple.is_err());
     }
 }
