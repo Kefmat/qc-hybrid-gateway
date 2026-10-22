@@ -9,14 +9,42 @@ pub enum ErrorKind {
     State,
 }
 
+impl ErrorKind {
+    pub const fn as_str(&self) -> &'static str {
+        match self {
+            ErrorKind::Framing => "Framing",
+            ErrorKind::Replay => "Replay",
+            ErrorKind::Crypto => "Crypto",
+            ErrorKind::State => "State",
+        }
+    }
+
+    pub const fn is_framing(&self) -> bool {
+        matches!(self, ErrorKind::Framing)
+    }
+
+    pub const fn is_replay(&self) -> bool {
+        matches!(self, ErrorKind::Replay)
+    }
+
+    pub const fn is_crypto(&self) -> bool {
+        matches!(self, ErrorKind::Crypto)
+    }
+
+    pub const fn is_state(&self) -> bool {
+        matches!(self, ErrorKind::State)
+    }
+}
+
+impl AsRef<str> for ErrorKind {
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
+}
+
 impl fmt::Display for ErrorKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            ErrorKind::Framing => write!(f, "Framing"),
-            ErrorKind::Replay => write!(f, "Replay"),
-            ErrorKind::Crypto => write!(f, "Crypto"),
-            ErrorKind::State => write!(f, "State"),
-        }
+        write!(f, "{}", self.as_str())
     }
 }
 
@@ -187,6 +215,26 @@ mod tests {
         assert_eq!(ErrorKind::Replay.to_string(), "Replay");
         assert_eq!(ErrorKind::Crypto.to_string(), "Crypto");
         assert_eq!(ErrorKind::State.to_string(), "State");
+    }
+
+    #[test]
+    fn test_error_kind_methods_and_as_ref() {
+        assert_eq!(ErrorKind::Framing.as_str(), "Framing");
+        assert_eq!(ErrorKind::Replay.as_str(), "Replay");
+        assert_eq!(ErrorKind::Crypto.as_str(), "Crypto");
+        assert_eq!(ErrorKind::State.as_str(), "State");
+
+        assert!(ErrorKind::Framing.is_framing());
+        assert!(!ErrorKind::Framing.is_replay());
+        assert!(ErrorKind::Replay.is_replay());
+        assert!(!ErrorKind::Replay.is_crypto());
+        assert!(ErrorKind::Crypto.is_crypto());
+        assert!(!ErrorKind::Crypto.is_state());
+        assert!(ErrorKind::State.is_state());
+        assert!(!ErrorKind::State.is_framing());
+
+        assert_eq!(ErrorKind::Framing.as_ref(), "Framing");
+        assert_eq!(ErrorKind::State.as_ref(), "State");
     }
 
     #[test]
