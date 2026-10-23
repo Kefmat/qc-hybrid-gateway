@@ -49,6 +49,10 @@ impl HybridSigPublicKey {
         self.dilithium_pk.as_bytes()
     }
 
+    pub fn as_parts(&self) -> (&[u8; ED25519_PUBLIC_KEY_SIZE], &DilithiumPublicKey) {
+        (&self.ed25519_pk, &self.dilithium_pk)
+    }
+
     pub fn into_parts(self) -> ([u8; ED25519_PUBLIC_KEY_SIZE], DilithiumPublicKey) {
         (self.ed25519_pk, self.dilithium_pk)
     }
@@ -169,6 +173,10 @@ impl HybridSignature {
         self.dilithium_sig.as_bytes()
     }
 
+    pub fn as_parts(&self) -> (&[u8; ED25519_SIGNATURE_SIZE], &DilithiumSignature) {
+        (&self.ed25519_sig, &self.dilithium_sig)
+    }
+
     pub fn into_parts(self) -> ([u8; ED25519_SIGNATURE_SIZE], DilithiumSignature) {
         (self.ed25519_sig, self.dilithium_sig)
     }
@@ -250,6 +258,10 @@ impl HybridSigKeyPair {
 
     pub fn secret_key(&self) -> &HybridSigSecretKey {
         &self.secret_key
+    }
+
+    pub fn as_parts(&self) -> (&HybridSigPublicKey, &HybridSigSecretKey) {
+        (&self.public_key, &self.secret_key)
     }
 
     pub fn into_parts(self) -> (HybridSigPublicKey, HybridSigSecretKey) {
@@ -406,6 +418,23 @@ mod tests {
         assert_eq!(ed_pk.len(), ED25519_PUBLIC_KEY_SIZE);
         assert!(!dilithium_pk.as_bytes().is_empty());
         assert_eq!(sk.ed25519_sk().len(), ED25519_PUBLIC_KEY_SIZE);
+    }
+
+    #[test]
+    fn test_sig_as_parts_accessors() {
+        let pair = HybridSigKeyPair::generate();
+        let (pk_ref, sk_ref) = pair.as_parts();
+        assert_eq!(pk_ref.ed25519_pk(), pair.public_key().ed25519_pk());
+        assert_eq!(sk_ref.ed25519_sk(), pair.secret_key().ed25519_sk());
+
+        let (ed_pk, dilithium_pk) = pair.public_key().as_parts();
+        assert_eq!(ed_pk, pair.public_key().ed25519_pk());
+        assert_eq!(dilithium_pk.as_bytes(), pair.public_key().dilithium_pk_bytes());
+
+        let sig = sign_hybrid(b"test-as-parts-sig", pair.secret_key());
+        let (ed_sig, dilithium_sig) = sig.as_parts();
+        assert_eq!(ed_sig, sig.ed25519_sig());
+        assert_eq!(dilithium_sig.as_bytes(), sig.dilithium_sig_bytes());
     }
 }
 
