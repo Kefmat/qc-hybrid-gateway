@@ -101,6 +101,38 @@ impl TryFrom<&[u8]> for SessionId {
     }
 }
 
+impl std::str::FromStr for SessionId {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Self::from_hex(s)
+    }
+}
+
+impl From<SessionId> for [u8; SESSION_ID_SIZE] {
+    fn from(id: SessionId) -> Self {
+        id.0
+    }
+}
+
+impl From<&SessionId> for [u8; SESSION_ID_SIZE] {
+    fn from(id: &SessionId) -> Self {
+        id.0
+    }
+}
+
+impl From<SessionId> for Vec<u8> {
+    fn from(id: SessionId) -> Self {
+        id.0.to_vec()
+    }
+}
+
+impl From<&SessionId> for Vec<u8> {
+    fn from(id: &SessionId) -> Self {
+        id.0.to_vec()
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SessionRole {
     Client,
@@ -1063,6 +1095,21 @@ mod tests {
         assert_eq!(try_from_valid.as_bytes(), &[0x12; SESSION_ID_SIZE]);
         let try_from_invalid: Result<SessionId, _> = (&[0x12; 8][..]).try_into();
         assert!(try_from_invalid.is_err());
+
+        // FromStr parsing
+        let from_str: SessionId = hex.parse().unwrap();
+        assert_eq!(sid, from_str);
+        assert!("invalid-hex".parse::<SessionId>().is_err());
+
+        // Into array / Vec conversions
+        let id_arr: [u8; SESSION_ID_SIZE] = sid.into();
+        assert_eq!(id_arr, *sid.as_bytes());
+        let id_arr_ref: [u8; SESSION_ID_SIZE] = (&sid).into();
+        assert_eq!(id_arr_ref, *sid.as_bytes());
+        let id_vec: Vec<u8> = sid.into();
+        assert_eq!(id_vec, sid.as_bytes().to_vec());
+        let id_vec_ref: Vec<u8> = (&sid).into();
+        assert_eq!(id_vec_ref, sid.as_bytes().to_vec());
     }
 
     #[test]
