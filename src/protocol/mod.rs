@@ -376,6 +376,26 @@ impl fmt::Display for PacketFrame {
     }
 }
 
+impl TryFrom<&[u8]> for PacketFrame {
+    type Error = String;
+
+    fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
+        Self::decode(bytes)
+    }
+}
+
+impl From<&PacketFrame> for Vec<u8> {
+    fn from(frame: &PacketFrame) -> Self {
+        frame.encode()
+    }
+}
+
+impl From<PacketFrame> for Vec<u8> {
+    fn from(frame: PacketFrame) -> Self {
+        frame.encode()
+    }
+}
+
 
 pub const DEFAULT_REPLAY_WINDOW_SIZE: u64 = 64;
 
@@ -748,6 +768,23 @@ mod tests {
         assert_eq!(PacketType::try_from(0x01).unwrap(), PacketType::HandshakeInit);
         assert_eq!(PacketType::try_from(0x03).unwrap(), PacketType::Data);
         assert!(PacketType::try_from(0x99).is_err());
+    }
+
+    #[test]
+    fn test_packet_frame_traits_and_conversions() {
+        let frame = PacketFrame::new(PacketType::Data, 42, b"hello payload".to_vec()).unwrap();
+        let frame_bytes: Vec<u8> = (&frame).into();
+        assert_eq!(frame_bytes, frame.encode());
+
+        let frame_owned = frame.clone();
+        let frame_vec: Vec<u8> = frame_owned.into();
+        assert_eq!(frame_vec, frame.encode());
+
+        let parsed: PacketFrame = frame_bytes.as_slice().try_into().expect("TryFrom slice failed");
+        assert_eq!(parsed, frame);
+
+        let invalid_slice = b"too-short";
+        assert!(PacketFrame::try_from(invalid_slice.as_slice()).is_err());
     }
 }
 

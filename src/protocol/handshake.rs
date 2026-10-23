@@ -169,6 +169,18 @@ impl fmt::Display for HandshakeInit {
     }
 }
 
+impl From<&HandshakeInit> for Vec<u8> {
+    fn from(init: &HandshakeInit) -> Self {
+        init.to_bytes()
+    }
+}
+
+impl From<HandshakeInit> for Vec<u8> {
+    fn from(init: HandshakeInit) -> Self {
+        init.to_bytes()
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct HandshakeResponse {
     pub ciphertext: HybridKemCiphertext,
@@ -331,6 +343,18 @@ impl fmt::Display for HandshakeResponse {
     }
 }
 
+impl From<&HandshakeResponse> for Vec<u8> {
+    fn from(resp: &HandshakeResponse) -> Self {
+        resp.to_bytes()
+    }
+}
+
+impl From<HandshakeResponse> for Vec<u8> {
+    fn from(resp: HandshakeResponse) -> Self {
+        resp.to_bytes()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -399,12 +423,20 @@ mod tests {
         let init_bytes = init.to_bytes();
         let decoded_init: HandshakeInit = init_bytes.as_slice().try_into().expect("TryFrom HandshakeInit failed");
         assert_eq!(init, decoded_init);
+        let init_ref_vec: Vec<u8> = (&init).into();
+        assert_eq!(init_ref_vec, init_bytes);
+        let init_owned_vec: Vec<u8> = init.clone().into();
+        assert_eq!(init_owned_vec, init_bytes);
 
         let (ct, _) = encapsulate_hybrid(&kem_keys.public_key);
         let resp = HandshakeResponse::create(ct, nonce, &sig_keys.secret_key);
         let resp_bytes = resp.to_bytes();
         let decoded_resp: HandshakeResponse = resp_bytes.as_slice().try_into().expect("TryFrom HandshakeResponse failed");
         assert_eq!(resp, decoded_resp);
+        let resp_ref_vec: Vec<u8> = (&resp).into();
+        assert_eq!(resp_ref_vec, resp_bytes);
+        let resp_owned_vec: Vec<u8> = resp.clone().into();
+        assert_eq!(resp_owned_vec, resp_bytes);
     }
 
     #[test]
