@@ -23,6 +23,20 @@ pub enum PacketType {
 }
 
 impl PacketType {
+    pub const fn as_str(&self) -> &'static str {
+        match self {
+            PacketType::HandshakeInit => "HandshakeInit",
+            PacketType::HandshakeResp => "HandshakeResp",
+            PacketType::Data => "Data",
+            PacketType::Ping => "Ping",
+            PacketType::Pong => "Pong",
+        }
+    }
+
+    pub const fn as_u8(&self) -> u8 {
+        *self as u8
+    }
+
     pub const fn is_handshake(&self) -> bool {
         matches!(self, PacketType::HandshakeInit | PacketType::HandshakeResp)
     }
@@ -44,16 +58,21 @@ impl PacketType {
     }
 }
 
-impl fmt::Display for PacketType {
+impl AsRef<str> for PacketType {
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
+}
 
+impl From<PacketType> for u8 {
+    fn from(packet_type: PacketType) -> Self {
+        packet_type.as_u8()
+    }
+}
+
+impl fmt::Display for PacketType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            PacketType::HandshakeInit => write!(f, "HandshakeInit"),
-            PacketType::HandshakeResp => write!(f, "HandshakeResp"),
-            PacketType::Data => write!(f, "Data"),
-            PacketType::Ping => write!(f, "Ping"),
-            PacketType::Pong => write!(f, "Pong"),
-        }
+        write!(f, "{}", self.as_str())
     }
 }
 
@@ -112,7 +131,7 @@ impl PacketHeader {
     pub fn encode(&self) -> [u8; HEADER_SIZE] {
         let mut buf = [0u8; HEADER_SIZE];
         buf[0] = self.version;
-        buf[1] = self.packet_type as u8;
+        buf[1] = self.packet_type.as_u8();
         buf[2..10].copy_from_slice(&self.seq.to_be_bytes());
         buf[10..14].copy_from_slice(&self.payload_len.to_be_bytes());
         buf
@@ -701,6 +720,34 @@ mod tests {
 
         let resp_frame = PacketFrame::handshake_resp(2, b"resp".to_vec()).unwrap();
         assert_eq!(resp_frame.packet_type(), PacketType::HandshakeResp);
+    }
+
+    #[test]
+    fn test_packet_type_conversions_and_traits() {
+        assert_eq!(PacketType::HandshakeInit.as_str(), "HandshakeInit");
+        assert_eq!(PacketType::HandshakeResp.as_str(), "HandshakeResp");
+        assert_eq!(PacketType::Data.as_str(), "Data");
+        assert_eq!(PacketType::Ping.as_str(), "Ping");
+        assert_eq!(PacketType::Pong.as_str(), "Pong");
+
+        assert_eq!(PacketType::HandshakeInit.as_ref(), "HandshakeInit");
+        assert_eq!(PacketType::Data.as_ref(), "Data");
+
+        assert_eq!(PacketType::HandshakeInit.as_u8(), 0x01);
+        assert_eq!(PacketType::HandshakeResp.as_u8(), 0x02);
+        assert_eq!(PacketType::Data.as_u8(), 0x03);
+        assert_eq!(PacketType::Ping.as_u8(), 0x04);
+        assert_eq!(PacketType::Pong.as_u8(), 0x05);
+
+        assert_eq!(u8::from(PacketType::HandshakeInit), 0x01);
+        assert_eq!(u8::from(PacketType::HandshakeResp), 0x02);
+        assert_eq!(u8::from(PacketType::Data), 0x03);
+        assert_eq!(u8::from(PacketType::Ping), 0x04);
+        assert_eq!(u8::from(PacketType::Pong), 0x05);
+
+        assert_eq!(PacketType::try_from(0x01).unwrap(), PacketType::HandshakeInit);
+        assert_eq!(PacketType::try_from(0x03).unwrap(), PacketType::Data);
+        assert!(PacketType::try_from(0x99).is_err());
     }
 }
 
