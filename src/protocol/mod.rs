@@ -91,6 +91,21 @@ impl TryFrom<u8> for PacketType {
     }
 }
 
+impl std::str::FromStr for PacketType {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "HandshakeInit" => Ok(PacketType::HandshakeInit),
+            "HandshakeResp" => Ok(PacketType::HandshakeResp),
+            "Data" => Ok(PacketType::Data),
+            "Ping" => Ok(PacketType::Ping),
+            "Pong" => Ok(PacketType::Pong),
+            _ => Err(format!("Unknown packet type: '{}'", s)),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PacketHeader {
     pub version: u8,
@@ -249,6 +264,30 @@ impl fmt::Display for PacketHeader {
     }
 }
 
+impl From<PacketHeader> for [u8; HEADER_SIZE] {
+    fn from(header: PacketHeader) -> Self {
+        header.encode()
+    }
+}
+
+impl From<&PacketHeader> for [u8; HEADER_SIZE] {
+    fn from(header: &PacketHeader) -> Self {
+        header.encode()
+    }
+}
+
+impl From<PacketHeader> for Vec<u8> {
+    fn from(header: PacketHeader) -> Self {
+        header.encode().to_vec()
+    }
+}
+
+impl From<&PacketHeader> for Vec<u8> {
+    fn from(header: &PacketHeader) -> Self {
+        header.encode().to_vec()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PacketFrame {
     pub header: PacketHeader,
@@ -393,6 +432,12 @@ impl From<&PacketFrame> for Vec<u8> {
 impl From<PacketFrame> for Vec<u8> {
     fn from(frame: PacketFrame) -> Self {
         frame.encode()
+    }
+}
+
+impl AsRef<PacketHeader> for PacketFrame {
+    fn as_ref(&self) -> &PacketHeader {
+        &self.header
     }
 }
 
@@ -785,6 +830,37 @@ mod tests {
 
         let invalid_slice = b"too-short";
         assert!(PacketFrame::try_from(invalid_slice.as_slice()).is_err());
+    }
+
+    #[test]
+    fn test_packet_type_from_str() {
+        assert_eq!("HandshakeInit".parse::<PacketType>().unwrap(), PacketType::HandshakeInit);
+        assert_eq!("HandshakeResp".parse::<PacketType>().unwrap(), PacketType::HandshakeResp);
+        assert_eq!("Data".parse::<PacketType>().unwrap(), PacketType::Data);
+        assert_eq!("Ping".parse::<PacketType>().unwrap(), PacketType::Ping);
+        assert_eq!("Pong".parse::<PacketType>().unwrap(), PacketType::Pong);
+        assert!("UnknownType".parse::<PacketType>().is_err());
+    }
+
+    #[test]
+    fn test_packet_header_array_and_vec_conversions() {
+        let header = PacketHeader::new(PacketType::Data, 42, 128).unwrap();
+        let encoded_arr: [u8; HEADER_SIZE] = (&header).into();
+        assert_eq!(encoded_arr, header.encode());
+
+        let owned_arr: [u8; HEADER_SIZE] = header.clone().into();
+        assert_eq!(owned_arr, header.encode());
+
+        let encoded_vec: Vec<u8> = (&header).into();
+        assert_eq!(encoded_vec, header.encode().to_vec());
+
+        let owned_vec: Vec<u8> = header.clone().into();
+        assert_eq!(owned_vec, header.encode().to_vec());
+
+        let frame = PacketFrame::new(PacketType::Data, 42, b"payload".to_vec()).unwrap();
+        let header_ref: &PacketHeader = frame.as_ref();
+        assert_eq!(header_ref.seq, 42);
+        assert_eq!(header_ref.packet_type, PacketType::Data);
     }
 }
 
