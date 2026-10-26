@@ -48,6 +48,20 @@ impl fmt::Display for ErrorKind {
     }
 }
 
+impl std::str::FromStr for ErrorKind {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "Framing" => Ok(ErrorKind::Framing),
+            "Replay" => Ok(ErrorKind::Replay),
+            "Crypto" => Ok(ErrorKind::Crypto),
+            "State" => Ok(ErrorKind::State),
+            _ => Err(format!("Unknown error kind: '{}'", s)),
+        }
+    }
+}
+
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
 pub enum ProtocolError {
     #[error("Buffer too short: expected at least {expected} bytes, received {actual} bytes")]
@@ -145,6 +159,30 @@ impl ProtocolError {
     }
 }
 
+impl From<ProtocolError> for std::io::Error {
+    fn from(err: ProtocolError) -> Self {
+        let io_kind = match err.kind() {
+            ErrorKind::Framing => std::io::ErrorKind::InvalidData,
+            ErrorKind::Replay => std::io::ErrorKind::ConnectionAborted,
+            ErrorKind::Crypto => std::io::ErrorKind::InvalidInput,
+            ErrorKind::State => std::io::ErrorKind::NotConnected,
+        };
+        std::io::Error::new(io_kind, err.to_string())
+    }
+}
+
+impl From<&ProtocolError> for std::io::Error {
+    fn from(err: &ProtocolError) -> Self {
+        let io_kind = match err.kind() {
+            ErrorKind::Framing => std::io::ErrorKind::InvalidData,
+            ErrorKind::Replay => std::io::ErrorKind::ConnectionAborted,
+            ErrorKind::Crypto => std::io::ErrorKind::InvalidInput,
+            ErrorKind::State => std::io::ErrorKind::NotConnected,
+        };
+        std::io::Error::new(io_kind, err.to_string())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -235,6 +273,12 @@ mod tests {
 
         assert_eq!(ErrorKind::Framing.as_ref(), "Framing");
         assert_eq!(ErrorKind::State.as_ref(), "State");
+
+        assert_eq!("Framing".parse::<ErrorKind>().unwrap(), ErrorKind::Framing);
+        assert_eq!("Replay".parse::<ErrorKind>().unwrap(), ErrorKind::Replay);
+        assert_eq!("Crypto".parse::<ErrorKind>().unwrap(), ErrorKind::Crypto);
+        assert_eq!("State".parse::<ErrorKind>().unwrap(), ErrorKind::State);
+        assert!("UnknownKind".parse::<ErrorKind>().is_err());
     }
 
     #[test]
@@ -266,6 +310,19 @@ mod tests {
         let err_state = ProtocolError::invalid_state("closed");
         assert_eq!(err_state.kind(), ErrorKind::State);
         assert!(!err_state.is_recoverable());
+
+        // Test std::io::Error conversions
+        let io_buf: std::io::Error = err_buf.into();
+        assert_eq!(io_buf.kind(), std::io::ErrorKind::InvalidData);
+
+        let io_replay: std::io::Error = (&err_replay).into();
+        assert_eq!(io_replay.kind(), std::io::ErrorKind::ConnectionAborted);
+
+        let io_crypto: std::io::Error = err_crypto.into();
+        assert_eq!(io_crypto.kind(), std::io::ErrorKind::InvalidInput);
+
+        let io_state: std::io::Error = (&err_state).into();
+        assert_eq!(io_state.kind(), std::io::ErrorKind::NotConnected);
     }
 }
 
