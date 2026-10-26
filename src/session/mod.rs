@@ -175,6 +175,18 @@ impl fmt::Display for SessionRole {
     }
 }
 
+impl std::str::FromStr for SessionRole {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "Client" => Ok(SessionRole::Client),
+            "Server" => Ok(SessionRole::Server),
+            _ => Err(format!("Unknown session role: '{}'", s)),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SessionState {
     Uninitialized,
@@ -251,6 +263,21 @@ impl AsRef<str> for SessionState {
 impl fmt::Display for SessionState {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.as_str())
+    }
+}
+
+impl std::str::FromStr for SessionState {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "Uninitialized" => Ok(SessionState::Uninitialized),
+            "Handshaking" => Ok(SessionState::Handshaking),
+            "Established" => Ok(SessionState::Established),
+            "Rekeying" => Ok(SessionState::Rekeying),
+            "Closed" => Ok(SessionState::Closed),
+            _ => Err(format!("Unknown session state: '{}'", s)),
+        }
     }
 }
 
@@ -362,9 +389,34 @@ impl std::ops::Add for SessionMetrics {
     }
 }
 
+impl std::ops::Add<&SessionMetrics> for SessionMetrics {
+    type Output = Self;
+
+    fn add(mut self, rhs: &SessionMetrics) -> Self::Output {
+        self.combine(rhs);
+        self
+    }
+}
+
+impl std::ops::Add<&SessionMetrics> for &SessionMetrics {
+    type Output = SessionMetrics;
+
+    fn add(self, rhs: &SessionMetrics) -> Self::Output {
+        let mut res = self.clone();
+        res.combine(rhs);
+        res
+    }
+}
+
 impl std::ops::AddAssign for SessionMetrics {
     fn add_assign(&mut self, rhs: Self) {
         self.combine(&rhs);
+    }
+}
+
+impl std::ops::AddAssign<&SessionMetrics> for SessionMetrics {
+    fn add_assign(&mut self, rhs: &SessionMetrics) {
+        self.combine(rhs);
     }
 }
 
@@ -839,6 +891,18 @@ mod tests {
         assert!(!session.is_rekey_in_progress());
         session.terminate();
         assert!(session.is_closed());
+
+        // FromStr parsing
+        assert_eq!("Client".parse::<SessionRole>().unwrap(), SessionRole::Client);
+        assert_eq!("Server".parse::<SessionRole>().unwrap(), SessionRole::Server);
+        assert!("InvalidRole".parse::<SessionRole>().is_err());
+
+        assert_eq!("Uninitialized".parse::<SessionState>().unwrap(), SessionState::Uninitialized);
+        assert_eq!("Handshaking".parse::<SessionState>().unwrap(), SessionState::Handshaking);
+        assert_eq!("Established".parse::<SessionState>().unwrap(), SessionState::Established);
+        assert_eq!("Rekeying".parse::<SessionState>().unwrap(), SessionState::Rekeying);
+        assert_eq!("Closed".parse::<SessionState>().unwrap(), SessionState::Closed);
+        assert!("InvalidState".parse::<SessionState>().is_err());
     }
 
     #[test]
@@ -1293,10 +1357,20 @@ mod tests {
         let added = m1.clone() + m2.clone();
         assert_eq!(added, combined);
 
+        let added_ref = &m1 + &m2;
+        assert_eq!(added_ref, combined);
+
+        let added_mixed = m1.clone() + &m2;
+        assert_eq!(added_mixed, combined);
+
         // Test std::ops::AddAssign
-        let mut assign_test = m1;
-        assign_test += m2;
+        let mut assign_test = m1.clone();
+        assign_test += m2.clone();
         assert_eq!(assign_test, combined);
+
+        let mut assign_ref_test = m1;
+        assign_ref_test += &m2;
+        assert_eq!(assign_ref_test, combined);
     }
 
     #[test]
