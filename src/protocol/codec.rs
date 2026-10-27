@@ -152,6 +152,16 @@ impl FrameDecoder {
         }
     }
 
+    /// Checks whether the internal buffer has reached or exceeded max frame size.
+    pub fn is_full(&self) -> bool {
+        self.buffer.len() >= self.max_frame_size
+    }
+
+    /// Returns the number of bytes that can be appended before reaching `max_frame_size`.
+    pub fn available_capacity(&self) -> usize {
+        self.max_frame_size.saturating_sub(self.buffer.len())
+    }
+
     pub fn decode_all(&mut self) -> Result<Vec<PacketFrame>, String> {
         let mut frames = Vec::new();
         while let Some(frame) = self.decode_frame()? {
@@ -159,6 +169,37 @@ impl FrameDecoder {
         }
         self.reclaim_unused_capacity();
         Ok(frames)
+    }
+}
+
+impl AsRef<[u8]> for FrameDecoder {
+    fn as_ref(&self) -> &[u8] {
+        self.buffer()
+    }
+}
+
+impl std::io::Write for FrameDecoder {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.feed(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+impl<'a> Extend<&'a [u8]> for FrameDecoder {
+    fn extend<T: IntoIterator<Item = &'a [u8]>>(&mut self, iter: T) {
+        for chunk in iter {
+            self.feed(chunk);
+        }
+    }
+}
+
+impl Extend<u8> for FrameDecoder {
+    fn extend<T: IntoIterator<Item = u8>>(&mut self, iter: T) {
+        self.buffer.extend(iter);
     }
 }
 
@@ -366,5 +407,37 @@ mod tests {
         assert!(decoder.capacity() >= 2000);
         decoder.compact();
         assert_eq!(decoder.capacity(), 512);
+    }
+
+    #[test]
+    fn test_codec_io_write_extend_and_traits() {
+        use std::io::Write;
+
+        let mut decoder = FrameDecoder::with_max_frame_size(100);
+        assert!(!decoder.is_full());
+        assert_eq!(decoder.available_capacity(), 100);
+
+        // Test std::io::Write
+        let written = decoder.write(b"streaming-").unwrap();
+        assert_eq!(written, 10);
+        assert_eq!(decoder.buffer_len(), 10);
+        assert_eq!(decoder.available_capacity(), 90);
+        decoder.flush().unwrap();
+
+        // Test AsRef<[u8]>
+        assert_eq!(decoder.as_ref(), b"streaming-");
+
+        // Test Extend<&[u8]>
+        decoder.extend(vec![&b"chunk1"[..], &b"-chunk2"[..]]);
+        assert_eq!(decoder.as_ref(), b"streaming-chunk1-chunk2");
+
+        // Test Extend<u8>
+        decoder.extend(vec![b'!', b'!']);
+        assert_eq!(decoder.as_ref(), b"streaming-chunk1-chunk2!!");
+
+        // Test is_full and available_capacity saturation
+        decoder.feed(&vec![0u8; 100]);
+        assert!(decoder.is_full());
+        assert_eq!(decoder.available_capacity(), 0);
     }
 }
