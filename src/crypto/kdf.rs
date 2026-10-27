@@ -149,6 +149,39 @@ impl SessionKeys {
         new_server.zeroize();
     }
 
+    pub fn to_bytes(&self) -> [u8; 64] {
+        let mut out = [0u8; 64];
+        out[..32].copy_from_slice(&self.client_write_key);
+        out[32..64].copy_from_slice(&self.server_write_key);
+        out
+    }
+
+    pub fn to_vec(&self) -> Vec<u8> {
+        self.to_bytes().to_vec()
+    }
+
+    pub fn from_bytes(bytes: &[u8; 64]) -> Self {
+        let mut client_write_key = [0u8; 32];
+        let mut server_write_key = [0u8; 32];
+        client_write_key.copy_from_slice(&bytes[..32]);
+        server_write_key.copy_from_slice(&bytes[32..64]);
+        Self::new(client_write_key, server_write_key)
+    }
+
+    pub fn from_byte_slice(bytes: &[u8]) -> Result<Self, String> {
+        if bytes.len() != 64 {
+            return Err(format!(
+                "Invalid byte slice length for SessionKeys: expected 64 bytes, got {}",
+                bytes.len()
+            ));
+        }
+        let mut client_write_key = [0u8; 32];
+        let mut server_write_key = [0u8; 32];
+        client_write_key.copy_from_slice(&bytes[..32]);
+        server_write_key.copy_from_slice(&bytes[32..64]);
+        Ok(Self::new(client_write_key, server_write_key))
+    }
+
     pub fn zeroize_keys(&mut self) {
         self.client_write_key.zeroize();
         self.server_write_key.zeroize();
@@ -207,6 +240,68 @@ impl PartialEq for SessionKeys {
 }
 
 impl Eq for SessionKeys {}
+
+impl From<([u8; 32], [u8; 32])> for SessionKeys {
+    fn from(keys: ([u8; 32], [u8; 32])) -> Self {
+        Self::new(keys.0, keys.1)
+    }
+}
+
+impl From<(&[u8; 32], &[u8; 32])> for SessionKeys {
+    fn from(keys: (&[u8; 32], &[u8; 32])) -> Self {
+        Self::new(*keys.0, *keys.1)
+    }
+}
+
+impl From<SessionKeys> for ([u8; 32], [u8; 32]) {
+    fn from(keys: SessionKeys) -> Self {
+        keys.into_parts()
+    }
+}
+
+impl From<[u8; 64]> for SessionKeys {
+    fn from(bytes: [u8; 64]) -> Self {
+        Self::from_bytes(&bytes)
+    }
+}
+
+impl From<&[u8; 64]> for SessionKeys {
+    fn from(bytes: &[u8; 64]) -> Self {
+        Self::from_bytes(bytes)
+    }
+}
+
+impl From<&SessionKeys> for [u8; 64] {
+    fn from(keys: &SessionKeys) -> Self {
+        keys.to_bytes()
+    }
+}
+
+impl From<SessionKeys> for [u8; 64] {
+    fn from(keys: SessionKeys) -> Self {
+        keys.to_bytes()
+    }
+}
+
+impl From<&SessionKeys> for Vec<u8> {
+    fn from(keys: &SessionKeys) -> Self {
+        keys.to_vec()
+    }
+}
+
+impl From<SessionKeys> for Vec<u8> {
+    fn from(keys: SessionKeys) -> Self {
+        keys.to_vec()
+    }
+}
+
+impl TryFrom<&[u8]> for SessionKeys {
+    type Error = String;
+
+    fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
+        Self::from_byte_slice(bytes)
+    }
+}
 
 impl TryFrom<(&[u8], &[u8])> for SessionKeys {
     type Error = String;
@@ -505,5 +600,61 @@ mod tests {
 
         let bad_tuple = SessionKeys::try_from((&[1u8, 2][..], &[0x34u8; 32][..]));
         assert!(bad_tuple.is_err());
+    }
+
+    #[test]
+    fn test_session_keys_conversions_and_serialization() {
+        let client_k = [0x11u8; 32];
+        let server_k = [0x22u8; 32];
+        let keys = SessionKeys::new(client_k, server_k);
+
+        // to_bytes and to_vec
+        let bytes64 = keys.to_bytes();
+        assert_eq!(&bytes64[..32], &client_k);
+        assert_eq!(&bytes64[32..64], &server_k);
+        assert_eq!(keys.to_vec(), bytes64.to_vec());
+
+        // from_bytes and from_byte_slice
+        let reconstructed = SessionKeys::from_bytes(&bytes64);
+        assert_eq!(reconstructed, keys);
+
+        let from_slice = SessionKeys::from_byte_slice(&bytes64).unwrap();
+        assert_eq!(from_slice, keys);
+
+        // TryFrom byte slice validation
+        assert!(SessionKeys::from_byte_slice(&[0u8; 30]).is_err());
+        assert!(SessionKeys::from_byte_slice(&[0u8; 65]).is_err());
+
+        let try_from_slice: SessionKeys = bytes64.as_slice().try_into().unwrap();
+        assert_eq!(try_from_slice, keys);
+
+        // From tuple conversions
+        let from_owned_tuple: SessionKeys = (client_k, server_k).into();
+        assert_eq!(from_owned_tuple, keys);
+
+        let from_ref_tuple: SessionKeys = ((&client_k, &server_k)).into();
+        assert_eq!(from_ref_tuple, keys);
+
+        let into_tuple: ([u8; 32], [u8; 32]) = keys.clone().into();
+        assert_eq!(into_tuple, (client_k, server_k));
+
+        // From array and vector conversions
+        let from_arr: SessionKeys = bytes64.into();
+        assert_eq!(from_arr, keys);
+
+        let from_arr_ref: SessionKeys = (&bytes64).into();
+        assert_eq!(from_arr_ref, keys);
+
+        let into_arr: [u8; 64] = keys.clone().into();
+        assert_eq!(into_arr, bytes64);
+
+        let into_arr_ref: [u8; 64] = (&keys).into();
+        assert_eq!(into_arr_ref, bytes64);
+
+        let into_vec: Vec<u8> = keys.clone().into();
+        assert_eq!(into_vec, bytes64.to_vec());
+
+        let into_vec_ref: Vec<u8> = (&keys).into();
+        assert_eq!(into_vec_ref, bytes64.to_vec());
     }
 }
