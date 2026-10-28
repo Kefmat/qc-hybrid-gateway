@@ -2,7 +2,7 @@ use pqcrypto_kyber::kyber768::{
     decapsulate, encapsulate, keypair, Ciphertext as KyberCiphertext, PublicKey as KyberPublicKey,
     SecretKey as KyberSecretKey,
 };
-use pqcrypto_traits::kem::{Ciphertext as _, PublicKey as _, SharedSecret as _};
+use pqcrypto_traits::kem::{Ciphertext as _, PublicKey as _, SecretKey as _, SharedSecret as _};
 use rand::rngs::OsRng;
 use x25519_dalek::{EphemeralSecret, PublicKey as X25519PublicKey, StaticSecret};
 use zeroize::Zeroize;
@@ -31,6 +31,17 @@ impl std::fmt::Debug for HybridKemPublicKey {
             .field("x25519_pk", &self.x25519_pk)
             .field("kyber_pk_len", &self.kyber_pk.as_bytes().len())
             .finish()
+    }
+}
+
+impl std::fmt::Display for HybridKemPublicKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "HybridKemPublicKey(x25519={}B, kyber={}B)",
+            self.x25519_pk.len(),
+            self.kyber_pk.as_bytes().len()
+        )
     }
 }
 
@@ -118,6 +129,27 @@ impl HybridKemSecretKey {
     pub fn kyber_sk(&self) -> &KyberSecretKey {
         &self.kyber_sk
     }
+
+    pub fn kyber_sk_bytes(&self) -> &[u8] {
+        self.kyber_sk.as_bytes()
+    }
+
+    pub fn as_parts(&self) -> (&[u8; X25519_KEY_SIZE], &KyberSecretKey) {
+        (&self.x25519_sk, &self.kyber_sk)
+    }
+
+    pub fn into_parts(self) -> ([u8; X25519_KEY_SIZE], KyberSecretKey) {
+        (self.x25519_sk, self.kyber_sk)
+    }
+}
+
+impl std::fmt::Debug for HybridKemSecretKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("HybridKemSecretKey")
+            .field("x25519_sk", &"[REDACTED]")
+            .field("kyber_sk_len", &self.kyber_sk.as_bytes().len())
+            .finish()
+    }
 }
 
 impl Drop for HybridKemSecretKey {
@@ -129,6 +161,15 @@ impl Drop for HybridKemSecretKey {
 pub struct HybridKemKeyPair {
     pub public_key: HybridKemPublicKey,
     pub secret_key: HybridKemSecretKey,
+}
+
+impl std::fmt::Debug for HybridKemKeyPair {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("HybridKemKeyPair")
+            .field("public_key", &self.public_key)
+            .field("secret_key", &self.secret_key)
+            .finish()
+    }
 }
 
 #[derive(Clone)]
@@ -152,6 +193,17 @@ impl std::fmt::Debug for HybridKemCiphertext {
             .field("x25519_ephemeral_pk", &self.x25519_ephemeral_pk)
             .field("kyber_ct_len", &self.kyber_ct.as_bytes().len())
             .finish()
+    }
+}
+
+impl std::fmt::Display for HybridKemCiphertext {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "HybridKemCiphertext(x25519_ephemeral={}B, kyber_ct={}B)",
+            self.x25519_ephemeral_pk.len(),
+            self.kyber_ct.as_bytes().len()
+        )
     }
 }
 
@@ -307,7 +359,6 @@ pub fn decapsulate_hybrid(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use pqcrypto_traits::kem::SecretKey as _;
 
     #[test]
     fn test_public_key_serialization() {
@@ -434,6 +485,43 @@ mod tests {
         let (x_ephem, kyber_ct) = ct.as_parts();
         assert_eq!(x_ephem, ct.x25519_ephemeral_pk());
         assert_eq!(kyber_ct.as_bytes(), ct.kyber_ct_bytes());
+    }
+
+    #[test]
+    fn test_kem_secret_key_parts_and_bytes() {
+        let pair = HybridKemKeyPair::generate();
+        let sk = pair.secret_key();
+        assert!(!sk.kyber_sk_bytes().is_empty());
+
+        let (x_sk, kyber_sk) = sk.as_parts();
+        assert_eq!(x_sk, sk.x25519_sk());
+        assert_eq!(kyber_sk.as_bytes(), sk.kyber_sk_bytes());
+
+        let (pk, sk_owned) = pair.into_parts();
+        assert_eq!(pk.encoded_len(), 1216);
+        let (x_sk_owned, kyber_sk_owned) = sk_owned.into_parts();
+        assert_eq!(x_sk_owned.len(), X25519_KEY_SIZE);
+        assert!(!kyber_sk_owned.as_bytes().is_empty());
+    }
+
+    #[test]
+    fn test_kem_debug_redaction_and_display() {
+        let pair = HybridKemKeyPair::generate();
+        let sk_debug = format!("{:?}", pair.secret_key());
+        assert!(sk_debug.contains("HybridKemSecretKey"));
+        assert!(sk_debug.contains("[REDACTED]"));
+        assert!(sk_debug.contains("kyber_sk_len"));
+
+        let pair_debug = format!("{:?}", pair);
+        assert!(pair_debug.contains("HybridKemKeyPair"));
+        assert!(pair_debug.contains("[REDACTED]"));
+
+        let pk_display = format!("{}", pair.public_key());
+        assert!(pk_display.contains("HybridKemPublicKey(x25519=32B, kyber=1184B)"));
+
+        let (ct, _) = encapsulate_hybrid(pair.public_key());
+        let ct_display = format!("{}", ct);
+        assert!(ct_display.contains("HybridKemCiphertext(x25519_ephemeral=32B, kyber_ct=1088B)"));
     }
 }
 
