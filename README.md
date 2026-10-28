@@ -2,7 +2,7 @@
 
 [![Rust](https://img.shields.io/badge/rust-1.75%2B-orange.svg)](https://www.rust-lang.org/)
 [![License](https://img.shields.io/badge/license-MIT%2FApache--2.0-blue.svg)](Cargo.toml)
-[![Tests](https://img.shields.io/badge/tests-121%20passing-brightgreen.svg)](https://github.com/Kefmat/qc-hybrid-gateway)
+[![Tests](https://img.shields.io/badge/tests-140%20passing-brightgreen.svg)](https://github.com/Kefmat/qc-hybrid-gateway)
 [![PQC](https://img.shields.io/badge/NIST-FIPS%20203%20%7C%20FIPS%20204-purple.svg)](https://csrc.nist.gov/pubs/fips/203/final)
 
 A high-performance Post-Quantum Hybrid Cryptographic Gateway and Secure Tunnel engine written in Rust.
@@ -31,8 +31,8 @@ The gateway combines NIST-standardized Post-Quantum Cryptography (PQC) algorithm
 * **Stream Codec**: Incremental buffer frame parser (`FrameDecoder`) supporting chunked streaming and multi-frame processing.
 * **Session State Machine**: Comprehensive lifecycle tracking (`Session`, `SessionRole`, `SessionState`) with sequence counters and rekey triggers.
 * **Keepalive & Latency Telemetry**: Bidirectional Ping/Pong heartbeat frames with millisecond RTT measurement and structured telemetry reporting.
-* **Anti-Replay Defense**: Sliding-window bitmask filter detecting replayed and out-of-order packets.
-* **Memory Safety**: Automatic secret key zeroization on drop (`zeroize`).
+* **Anti-Replay Defense**: Sliding-window bitmask filter detecting replayed and out-of-order packets with non-mutating pre-filtering (`would_accept`, `is_replay`).
+* **Memory Safety & Redaction**: Automatic secret key zeroization on drop (`zeroize`) and safe `Debug` redaction preventing credential leakage in logs.
 
 ---
 
@@ -247,9 +247,9 @@ cargo run --release -- bench
 
 ## Security & Implementation Notes
 
-- **Zeroization**: All private keys (`HybridKemSecretKey`, `HybridSigSecretKey`, `SessionKeys`) automatically zeroize underlying memory on drop.
+- **Zeroization & Safe Redaction**: All private keys (`HybridKemSecretKey`, `HybridSigSecretKey`, `SessionKeys`) automatically zeroize underlying memory on drop and implement redacted `Debug` representations to avoid leaking sensitive entropy in traces.
 - **Transcript Binding**: All derived session keys are strictly bound to ephemeral exchange transcripts via HKDF-SHA256.
-- **Anti-Replay Window**: Uses configurable sliding-window bitmask verification (default window: 64 packets) to prevent packet replay attacks.
+- **Anti-Replay Window & Pre-Filtering**: Uses configurable sliding-window bitmask verification (default window: 64 packets) with non-mutating `would_accept` and `is_replay` inspection to drop replays before decryption.
 - **Memory Safety & Invariants**: All frame lengths and header fields are strictly bounded by `MAX_FRAME_SIZE` (64 KB) with checked constructors.
 - **Real-time Telemetry & Diagnostics**: Tracks transmitted/received packets, payload throughput, average packet sizes, dropped replay packets, and rekey rotation counters.
 

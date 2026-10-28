@@ -299,6 +299,61 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn test_hybrid_gateway_type_conversions_debug_and_filtering() {
+        // 1. Generate keypairs and inspect safe Debug representations (no private key exposure)
+        let kem_keys = HybridKemKeyPair::generate();
+        let sig_keys = HybridSigKeyPair::generate();
+
+        let kem_debug = format!("{:?}", kem_keys);
+        assert!(kem_debug.contains("[REDACTED]"));
+        assert!(kem_debug.contains("HybridKemKeyPair"));
+
+        let sig_debug = format!("{:?}", sig_keys);
+        assert!(sig_debug.contains("[REDACTED]"));
+        assert!(sig_debug.contains("HybridSigKeyPair"));
+
+        // 2. Test Display formatting for public types
+        let (ct, sender_ss) = encapsulate_hybrid(&kem_keys.public_key);
+        let pk_display = format!("{}", kem_keys.public_key);
+        assert!(pk_display.starts_with("HybridKemPublicKey("));
+        let ct_display = format!("{}", ct);
+        assert!(ct_display.starts_with("HybridKemCiphertext("));
+
+        let sig = sign_hybrid(b"integration-display-test", &sig_keys.secret_key);
+        let sig_display = format!("{}", sig);
+        assert!(sig_display.starts_with("HybridSignature("));
+        let sig_pk_display = format!("{}", sig_keys.public_key);
+        assert!(sig_pk_display.starts_with("HybridSigPublicKey("));
+
+        // 3. Session peer role and ciphers checking
+        let mut client = Session::new_client();
+        let server = Session::new_server();
+        assert!(client.is_peer_role(server.role()));
+        assert!(server.is_peer_role(client.role()));
+        assert!(!client.is_ciphers_initialized());
+
+        let transcript = hash_transcript(&[&ct.to_bytes()]);
+        let session_keys = derive_session_keys(&sender_ss, &transcript);
+        client.establish(&session_keys).unwrap();
+        assert!(client.is_ciphers_initialized());
+
+        // 4. Test pre-filtering with AntiReplayFilter::would_accept and is_replay
+        let mut filter = AntiReplayFilter::new(32);
+        let frame1 = client.encrypt_packet(PacketType::Data, b"stream-msg-1").unwrap();
+        assert!(filter.would_accept(frame1.seq()));
+        assert!(!filter.is_replay(frame1.seq()));
+        assert!(filter.check_and_update(frame1.seq()));
+        assert!(!filter.would_accept(frame1.seq()));
+        assert!(filter.is_replay(frame1.seq()));
+
+        // Display check for Session and AntiReplayFilter
+        let session_display = format!("{}", client);
+        assert!(session_display.contains("Session("));
+        let filter_display = format!("{}", filter);
+        assert!(filter_display.contains("AntiReplayFilter(window=32"));
+    }
 }
 
 
