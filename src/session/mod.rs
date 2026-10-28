@@ -161,6 +161,14 @@ impl SessionRole {
             SessionRole::Server => SessionRole::Client,
         }
     }
+
+    pub const fn is_peer_of(&self, other: &Self) -> bool {
+        match (self, other) {
+            (SessionRole::Client, SessionRole::Server) => true,
+            (SessionRole::Server, SessionRole::Client) => true,
+            _ => false,
+        }
+    }
 }
 
 impl AsRef<str> for SessionRole {
@@ -800,6 +808,14 @@ impl Session {
         )
     }
 
+    pub fn is_peer_role(&self, other_role: SessionRole) -> bool {
+        self.role.is_peer_of(&other_role)
+    }
+
+    pub fn is_ciphers_initialized(&self) -> bool {
+        self.tx_cipher.is_some() && self.rx_cipher.is_some()
+    }
+
     pub fn telemetry_json(&self) -> String {
         format!(
             r#"{{"session_id":"{}","role":"{}","state":"{}","metrics":{}}}"#,
@@ -808,6 +824,28 @@ impl Session {
             self.state,
             self.metrics.to_json()
         )
+    }
+}
+
+impl fmt::Debug for Session {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Session")
+            .field("session_id", &self.session_id)
+            .field("role", &self.role)
+            .field("state", &self.state)
+            .field("tx_seq", &self.tx_seq)
+            .field("rx_filter", &self.rx_filter)
+            .field("has_tx_cipher", &self.tx_cipher.is_some())
+            .field("has_rx_cipher", &self.rx_cipher.is_some())
+            .field("rekey_threshold", &self.rekey_threshold)
+            .field("metrics", &self.metrics)
+            .finish()
+    }
+}
+
+impl fmt::Display for Session {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.summary())
     }
 }
 
@@ -1467,6 +1505,40 @@ mod tests {
         closed_session.close();
         assert!(closed_session.ratchet_rekey(&mut keys).is_err());
         assert!(closed_session.ratchet_rekey_with_salt(&mut keys, b"salt").is_err());
+    }
+
+    #[test]
+    fn test_session_role_peer_relations() {
+        assert!(SessionRole::Client.is_peer_of(&SessionRole::Server));
+        assert!(SessionRole::Server.is_peer_of(&SessionRole::Client));
+        assert!(!SessionRole::Client.is_peer_of(&SessionRole::Client));
+        assert!(!SessionRole::Server.is_peer_of(&SessionRole::Server));
+
+        let client = Session::new_client();
+        assert!(client.is_peer_role(SessionRole::Server));
+        assert!(!client.is_peer_role(SessionRole::Client));
+    }
+
+    #[test]
+    fn test_session_debug_display_and_ciphers() {
+        let mut client = Session::new_client();
+        assert!(!client.is_ciphers_initialized());
+
+        let debug_str = format!("{:?}", client);
+        assert!(debug_str.contains("Session"));
+        assert!(debug_str.contains("role: Client"));
+        assert!(debug_str.contains("has_tx_cipher: false"));
+
+        let display_str = format!("{}", client);
+        assert_eq!(display_str, client.summary());
+
+        let keys = SessionKeys::new([1u8; 32], [2u8; 32]);
+        client.establish(&keys).unwrap();
+        assert!(client.is_ciphers_initialized());
+
+        let debug_established = format!("{:?}", client);
+        assert!(debug_established.contains("has_tx_cipher: true"));
+        assert!(debug_established.contains("has_rx_cipher: true"));
     }
 }
 
