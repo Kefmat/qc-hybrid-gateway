@@ -6,7 +6,7 @@ use pqcrypto_dilithium::dilithium3::{
     detached_sign, keypair, verify_detached_signature, DetachedSignature as DilithiumSignature,
     PublicKey as DilithiumPublicKey, SecretKey as DilithiumSecretKey,
 };
-use pqcrypto_traits::sign::{DetachedSignature as _, PublicKey as _};
+use pqcrypto_traits::sign::{DetachedSignature as _, PublicKey as _, SecretKey as _};
 use rand::rngs::OsRng;
 use zeroize::Zeroize;
 
@@ -33,6 +33,17 @@ impl std::fmt::Debug for HybridSigPublicKey {
             .field("ed25519_pk", &self.ed25519_pk)
             .field("dilithium_pk_len", &self.dilithium_pk.as_bytes().len())
             .finish()
+    }
+}
+
+impl std::fmt::Display for HybridSigPublicKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "HybridSigPublicKey(ed25519={}B, dilithium={}B)",
+            self.ed25519_pk.len(),
+            self.dilithium_pk.as_bytes().len()
+        )
     }
 }
 
@@ -120,6 +131,27 @@ impl HybridSigSecretKey {
     pub fn dilithium_sk(&self) -> &DilithiumSecretKey {
         &self.dilithium_sk
     }
+
+    pub fn dilithium_sk_bytes(&self) -> &[u8] {
+        self.dilithium_sk.as_bytes()
+    }
+
+    pub fn as_parts(&self) -> (&[u8; ED25519_PUBLIC_KEY_SIZE], &DilithiumSecretKey) {
+        (&self.ed25519_sk, &self.dilithium_sk)
+    }
+
+    pub fn into_parts(self) -> ([u8; ED25519_PUBLIC_KEY_SIZE], DilithiumSecretKey) {
+        (self.ed25519_sk, self.dilithium_sk)
+    }
+}
+
+impl std::fmt::Debug for HybridSigSecretKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("HybridSigSecretKey")
+            .field("ed25519_sk", &"[REDACTED]")
+            .field("dilithium_sk_len", &self.dilithium_sk.as_bytes().len())
+            .finish()
+    }
 }
 
 impl Drop for HybridSigSecretKey {
@@ -131,6 +163,15 @@ impl Drop for HybridSigSecretKey {
 pub struct HybridSigKeyPair {
     pub public_key: HybridSigPublicKey,
     pub secret_key: HybridSigSecretKey,
+}
+
+impl std::fmt::Debug for HybridSigKeyPair {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("HybridSigKeyPair")
+            .field("public_key", &self.public_key)
+            .field("secret_key", &self.secret_key)
+            .finish()
+    }
 }
 
 #[derive(Clone)]
@@ -154,6 +195,17 @@ impl std::fmt::Debug for HybridSignature {
             .field("ed25519_sig_len", &self.ed25519_sig.len())
             .field("dilithium_sig_len", &self.dilithium_sig.as_bytes().len())
             .finish()
+    }
+}
+
+impl std::fmt::Display for HybridSignature {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "HybridSignature(ed25519={}B, dilithium={}B)",
+            self.ed25519_sig.len(),
+            self.dilithium_sig.as_bytes().len()
+        )
     }
 }
 
@@ -304,7 +356,6 @@ pub fn verify_hybrid(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use pqcrypto_traits::sign::SecretKey as _;
 
     #[test]
     fn test_public_key_serialization() {
@@ -435,6 +486,44 @@ mod tests {
         let (ed_sig, dilithium_sig) = sig.as_parts();
         assert_eq!(ed_sig, sig.ed25519_sig());
         assert_eq!(dilithium_sig.as_bytes(), sig.dilithium_sig_bytes());
+    }
+
+    #[test]
+    fn test_sig_secret_key_parts_and_bytes() {
+        let pair = HybridSigKeyPair::generate();
+        let sk = pair.secret_key();
+        assert!(!sk.dilithium_sk_bytes().is_empty());
+
+        let (ed_sk, dilithium_sk) = sk.as_parts();
+        assert_eq!(ed_sk, sk.ed25519_sk());
+        assert_eq!(dilithium_sk.as_bytes(), sk.dilithium_sk_bytes());
+
+        let (pk, sk_owned) = pair.into_parts();
+        assert_eq!(pk.encoded_len(), 1984);
+        let (ed_sk_owned, dilithium_sk_owned) = sk_owned.into_parts();
+        assert_eq!(ed_sk_owned.len(), ED25519_PUBLIC_KEY_SIZE);
+        assert!(!dilithium_sk_owned.as_bytes().is_empty());
+    }
+
+    #[test]
+    fn test_sig_debug_redaction_and_display() {
+        let pair = HybridSigKeyPair::generate();
+        let sk_debug = format!("{:?}", pair.secret_key());
+        assert!(sk_debug.contains("HybridSigSecretKey"));
+        assert!(sk_debug.contains("[REDACTED]"));
+        assert!(sk_debug.contains("dilithium_sk_len"));
+
+        let pair_debug = format!("{:?}", pair);
+        assert!(pair_debug.contains("HybridSigKeyPair"));
+        assert!(pair_debug.contains("[REDACTED]"));
+
+        let pk_display = format!("{}", pair.public_key());
+        assert!(pk_display.contains("HybridSigPublicKey(ed25519=32B, dilithium=1952B)"));
+
+        let sig = sign_hybrid(b"display-test-msg", pair.secret_key());
+        let sig_display = format!("{}", sig);
+        let expected_sig_str = format!("HybridSignature(ed25519=64B, dilithium={}B)", sig.dilithium_sig_bytes().len());
+        assert_eq!(sig_display, expected_sig_str);
     }
 }
 
