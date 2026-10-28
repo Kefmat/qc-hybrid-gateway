@@ -444,7 +444,7 @@ impl AsRef<PacketHeader> for PacketFrame {
 
 pub const DEFAULT_REPLAY_WINDOW_SIZE: u64 = 64;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AntiReplayFilter {
     window_size: u64,
     highest_seq: u64,
@@ -494,6 +494,22 @@ impl AntiReplayFilter {
         seq.saturating_add(self.window_size) <= self.highest_seq
     }
 
+    /// Checks if a sequence number would be accepted without mutating the filter state.
+    pub fn would_accept(&self, seq: u64) -> bool {
+        if seq > self.highest_seq {
+            true
+        } else if seq + self.window_size > self.highest_seq {
+            !self.seen.contains(&seq)
+        } else {
+            false
+        }
+    }
+
+    /// Checks if a sequence number is a replay of a previously seen sequence within the window.
+    pub fn is_replay(&self, seq: u64) -> bool {
+        seq <= self.highest_seq && seq + self.window_size > self.highest_seq && self.seen.contains(&seq)
+    }
+
     pub fn reset(&mut self) {
         self.highest_seq = 0;
         self.seen.clear();
@@ -516,6 +532,16 @@ impl AntiReplayFilter {
         } else {
             false // Too old
         }
+    }
+}
+
+impl fmt::Display for AntiReplayFilter {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "AntiReplayFilter(window={}, highest_seq={}, seen={})",
+            self.window_size, self.highest_seq, self.seen.len()
+        )
     }
 }
 
@@ -861,6 +887,40 @@ mod tests {
         let header_ref: &PacketHeader = frame.as_ref();
         assert_eq!(header_ref.seq, 42);
         assert_eq!(header_ref.packet_type, PacketType::Data);
+    }
+
+    #[test]
+    fn test_anti_replay_filter_would_accept_and_is_replay() {
+        let mut filter = AntiReplayFilter::new(10);
+        assert!(filter.would_accept(10));
+        assert!(!filter.is_replay(10));
+
+        assert!(filter.check_and_update(10));
+        assert!(!filter.would_accept(10));
+        assert!(filter.is_replay(10));
+
+        // In-window unobserved
+        assert!(filter.would_accept(8));
+        assert!(!filter.is_replay(8));
+        assert!(filter.check_and_update(8));
+        assert!(!filter.would_accept(8));
+        assert!(filter.is_replay(8));
+
+        // Too old packet
+        assert!(!filter.would_accept(0));
+        assert!(!filter.is_replay(0)); // not replay, but too old
+    }
+
+    #[test]
+    fn test_anti_replay_filter_display_and_equality() {
+        let f1 = AntiReplayFilter::new(32);
+        let f2 = AntiReplayFilter::new(32);
+        let f3 = AntiReplayFilter::new(64);
+        assert_eq!(f1, f2);
+        assert_ne!(f1, f3);
+
+        let disp = format!("{}", f1);
+        assert_eq!(disp, "AntiReplayFilter(window=32, highest_seq=0, seen=0)");
     }
 }
 
