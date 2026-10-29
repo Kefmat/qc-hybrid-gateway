@@ -236,6 +236,21 @@ impl PacketHeader {
     pub fn handshake_resp(seq: u64, payload_len: u32) -> Result<Self, String> {
         Self::new(PacketType::HandshakeResp, seq, payload_len)
     }
+
+    /// Returns a compact summary string formatted as "PacketType:seq=X,len=Y".
+    pub fn summary(&self) -> String {
+        format!("{}:seq={},len={}", self.packet_type, self.seq, self.payload_len)
+    }
+
+    /// Checks if this header's packet type matches the expected packet type.
+    pub const fn matches_type(&self, expected: PacketType) -> bool {
+        self.packet_type as u8 == expected as u8
+    }
+
+    /// Checks if this header's sequence counter matches the expected sequence.
+    pub const fn matches_seq(&self, expected_seq: u64) -> bool {
+        self.seq == expected_seq
+    }
 }
 
 impl TryFrom<&[u8]> for PacketHeader {
@@ -402,6 +417,46 @@ impl PacketFrame {
 
     pub fn handshake_resp(seq: u64, payload: Vec<u8>) -> Result<Self, String> {
         Self::new(PacketType::HandshakeResp, seq, payload)
+    }
+
+    /// Returns a compact summary string of the frame formatted as "PacketType:seq=X,len=Y".
+    pub fn summary(&self) -> String {
+        self.header.summary()
+    }
+
+    /// Checks if this frame's packet type matches the expected packet type.
+    pub const fn matches_type(&self, expected: PacketType) -> bool {
+        self.header.matches_type(expected)
+    }
+
+    /// Checks if this frame's sequence counter matches the expected sequence.
+    pub const fn matches_seq(&self, expected_seq: u64) -> bool {
+        self.header.matches_seq(expected_seq)
+    }
+
+    /// Provides mutable access to the internal payload buffer.
+    pub fn payload_mut(&mut self) -> &mut Vec<u8> {
+        &mut self.payload
+    }
+
+    /// Replaces the payload and updates the header length accordingly, validating against MAX_FRAME_SIZE.
+    pub fn set_payload(&mut self, payload: Vec<u8>) -> Result<(), String> {
+        if payload.len() > MAX_FRAME_SIZE {
+            return Err(format!(
+                "Payload length {} exceeds maximum frame size {}",
+                payload.len(),
+                MAX_FRAME_SIZE
+            ));
+        }
+        self.header.payload_len = payload.len() as u32;
+        self.payload = payload;
+        Ok(())
+    }
+
+    /// Clears the payload buffer and resets the header payload length to 0.
+    pub fn clear_payload(&mut self) {
+        self.payload.clear();
+        self.header.payload_len = 0;
     }
 }
 
@@ -921,6 +976,33 @@ mod tests {
 
         let disp = format!("{}", f1);
         assert_eq!(disp, "AntiReplayFilter(window=32, highest_seq=0, seen=0)");
+    }
+
+    #[test]
+    fn test_packet_header_and_frame_summary_and_mutators() {
+        let mut frame = PacketFrame::data(42, b"initial".to_vec()).unwrap();
+        assert_eq!(frame.summary(), "Data:seq=42,len=7");
+        assert_eq!(frame.header().summary(), "Data:seq=42,len=7");
+        assert!(frame.matches_seq(42));
+        assert!(!frame.matches_seq(43));
+        assert!(frame.matches_type(PacketType::Data));
+        assert!(!frame.matches_type(PacketType::Ping));
+
+        frame.payload_mut().extend_from_slice(b"-extra");
+        frame.header.payload_len = frame.payload.len() as u32;
+        assert_eq!(frame.payload(), b"initial-extra");
+        assert_eq!(frame.payload_len(), 13);
+
+        frame.set_payload(b"replaced".to_vec()).unwrap();
+        assert_eq!(frame.payload(), b"replaced");
+        assert_eq!(frame.header.payload_len, 8);
+        assert_eq!(frame.summary(), "Data:seq=42,len=8");
+
+        frame.clear_payload();
+        assert!(frame.is_empty());
+        assert_eq!(frame.payload_len(), 0);
+        assert_eq!(frame.header.payload_len, 0);
+        assert_eq!(frame.summary(), "Data:seq=42,len=0");
     }
 }
 
