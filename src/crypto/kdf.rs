@@ -213,6 +213,39 @@ impl SessionKeys {
         }
         acc == 0
     }
+
+    /// Inverts the session keys by returning a new instance with client and server write keys swapped.
+    pub fn inverted(&self) -> Self {
+        Self::new(self.server_write_key, self.client_write_key)
+    }
+
+    /// Inverts the session keys in-place by swapping client and server write keys.
+    pub fn invert(&mut self) {
+        std::mem::swap(&mut self.client_write_key, &mut self.server_write_key);
+    }
+
+    /// Returns a short 8-hex-character SHA-256 fingerprint of the client write key for non-sensitive logging.
+    pub fn client_key_fingerprint(&self) -> String {
+        let hash = Sha256::digest(self.client_write_key);
+        hash[..4].iter().map(|b| format!("{:02x}", b)).collect()
+    }
+
+    /// Returns a short 8-hex-character SHA-256 fingerprint of the server write key for non-sensitive logging.
+    pub fn server_key_fingerprint(&self) -> String {
+        let hash = Sha256::digest(self.server_write_key);
+        hash[..4].iter().map(|b| format!("{:02x}", b)).collect()
+    }
+}
+
+impl std::fmt::Display for SessionKeys {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "SessionKeys(client_fp={}, server_fp={})",
+            self.client_key_fingerprint(),
+            self.server_key_fingerprint()
+        )
+    }
 }
 
 impl std::fmt::Debug for SessionKeys {
@@ -656,5 +689,34 @@ mod tests {
 
         let into_vec_ref: Vec<u8> = (&keys).into();
         assert_eq!(into_vec_ref, bytes64.to_vec());
+    }
+
+    #[test]
+    fn test_session_keys_inversion_and_display() {
+        let client_k = [0x11u8; 32];
+        let server_k = [0x22u8; 32];
+        let mut keys = SessionKeys::new(client_k, server_k);
+
+        // Test Display and Fingerprints
+        let display_str = format!("{}", keys);
+        assert!(display_str.contains("SessionKeys(client_fp="));
+        assert!(display_str.contains("server_fp="));
+        assert_eq!(keys.client_key_fingerprint().len(), 8);
+        assert_eq!(keys.server_key_fingerprint().len(), 8);
+        assert_ne!(keys.client_key_fingerprint(), keys.server_key_fingerprint());
+
+        // Test inverted
+        let inverted = keys.inverted();
+        assert_eq!(inverted.client_write_key, server_k);
+        assert_eq!(inverted.server_write_key, client_k);
+        assert_eq!(inverted.client_key_fingerprint(), keys.server_key_fingerprint());
+        assert_eq!(inverted.server_key_fingerprint(), keys.client_key_fingerprint());
+
+        // Test invert in-place
+        keys.invert();
+        assert_eq!(keys, inverted);
+        keys.invert();
+        assert_eq!(keys.client_write_key, client_k);
+        assert_eq!(keys.server_write_key, server_k);
     }
 }
