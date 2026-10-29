@@ -139,6 +139,41 @@ impl AeadCipher {
             .decrypt(nonce, payload)
             .map_err(|e| format!("AEAD decryption/auth tag error: {:?}", e))
     }
+
+    /// Returns the cryptographic algorithm identifier for this cipher engine.
+    pub const fn algorithm(&self) -> &'static str {
+        "ChaCha20Poly1305"
+    }
+
+    /// Encrypts plaintext and appends the resulting ciphertext directly into an existing output buffer,
+    /// returning the number of bytes appended.
+    pub fn encrypt_into(
+        &self,
+        nonce_counter: u64,
+        aad: &[u8],
+        plaintext: &[u8],
+        out: &mut Vec<u8>,
+    ) -> Result<usize, String> {
+        let encrypted = self.encrypt(nonce_counter, aad, plaintext)?;
+        let len = encrypted.len();
+        out.extend_from_slice(&encrypted);
+        Ok(len)
+    }
+
+    /// Decrypts ciphertext and appends the resulting plaintext directly into an existing output buffer,
+    /// returning the number of bytes appended.
+    pub fn decrypt_into(
+        &self,
+        nonce_counter: u64,
+        aad: &[u8],
+        ciphertext: &[u8],
+        out: &mut Vec<u8>,
+    ) -> Result<usize, String> {
+        let decrypted = self.decrypt(nonce_counter, aad, ciphertext)?;
+        let len = decrypted.len();
+        out.extend_from_slice(&decrypted);
+        Ok(len)
+    }
 }
 
 impl From<&[u8; KEY_SIZE]> for AeadCipher {
@@ -169,6 +204,19 @@ impl std::fmt::Debug for AeadCipher {
             .field("tag_size", &TAG_SIZE)
             .field("nonce_size", &NONCE_SIZE)
             .finish()
+    }
+}
+
+impl std::fmt::Display for AeadCipher {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "AeadCipher(algorithm={}, key_size={}B, tag_size={}B, nonce_size={}B)",
+            self.algorithm(),
+            KEY_SIZE,
+            TAG_SIZE,
+            NONCE_SIZE
+        )
     }
 }
 
@@ -344,6 +392,33 @@ mod tests {
         let ct_seq1 = cipher.encrypt(1, b"aad", b"hello").unwrap();
         // Trying to decrypt with seq 2 must fail even with exact same payload and aad
         assert!(cipher.decrypt(2, b"aad", &ct_seq1).is_err());
+    }
+
+    #[test]
+    fn test_aead_cipher_display_and_encrypt_into() {
+        let key = [0xAAu8; KEY_SIZE];
+        let cipher = AeadCipher::new(&key);
+
+        assert_eq!(cipher.algorithm(), "ChaCha20Poly1305");
+        let display_str = format!("{}", cipher);
+        assert_eq!(
+            display_str,
+            "AeadCipher(algorithm=ChaCha20Poly1305, key_size=32B, tag_size=16B, nonce_size=12B)"
+        );
+
+        let plaintext = b"streaming buffer payload";
+        let aad = b"header-aad";
+        let mut out_buffer = Vec::from(b"PREFIX-".as_slice());
+
+        let written = cipher.encrypt_into(1, aad, plaintext, &mut out_buffer).unwrap();
+        assert_eq!(written, plaintext.len() + TAG_SIZE);
+        assert_eq!(out_buffer.len(), 7 + written);
+
+        let ciphertext = &out_buffer[7..];
+        let mut decrypted_buffer = Vec::new();
+        let decrypted_len = cipher.decrypt_into(1, aad, ciphertext, &mut decrypted_buffer).unwrap();
+        assert_eq!(decrypted_len, plaintext.len());
+        assert_eq!(decrypted_buffer.as_slice(), plaintext);
     }
 }
 
