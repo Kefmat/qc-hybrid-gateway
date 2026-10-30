@@ -4,6 +4,7 @@ use crate::crypto::{
     kem::{HybridKemCiphertext, HybridKemPublicKey},
     sig::{sign_hybrid, verify_hybrid, HybridSigPublicKey, HybridSigSecretKey, HybridSignature},
 };
+use crate::protocol::{PacketFrame, PacketType};
 
 pub const HANDSHAKE_NONCE_SIZE: usize = 16;
 
@@ -98,6 +99,32 @@ impl HandshakeInit {
         )
     }
 
+    /// Returns the hex-encoded representation of the 16-byte nonce.
+    pub fn nonce_hex(&self) -> String {
+        self.nonce.iter().map(|b| format!("{:02x}", b)).collect()
+    }
+
+    /// Checks whether the nonce matches the expected byte array.
+    pub fn matches_nonce(&self, expected: &[u8; HANDSHAKE_NONCE_SIZE]) -> bool {
+        &self.nonce == expected
+    }
+
+    /// Wraps this `HandshakeInit` payload in a `PacketFrame` with `PacketType::HandshakeInit`.
+    pub fn to_frame(&self, seq: u64) -> Result<PacketFrame, String> {
+        PacketFrame::new(PacketType::HandshakeInit, seq, self.to_bytes())
+    }
+
+    /// Decodes a `HandshakeInit` message from an incoming `PacketFrame`, verifying packet type.
+    pub fn from_frame(frame: &PacketFrame) -> Result<Self, String> {
+        if frame.packet_type() != PacketType::HandshakeInit {
+            return Err(format!(
+                "Expected PacketType::HandshakeInit, got {}",
+                frame.packet_type()
+            ));
+        }
+        Self::from_bytes(frame.payload())
+    }
+
     pub fn encoded_len(&self) -> usize {
         4 + self.ephemeral_pk.encoded_len() + HANDSHAKE_NONCE_SIZE + 4 + self.signature.encoded_len()
     }
@@ -178,6 +205,22 @@ impl From<&HandshakeInit> for Vec<u8> {
 impl From<HandshakeInit> for Vec<u8> {
     fn from(init: HandshakeInit) -> Self {
         init.to_bytes()
+    }
+}
+
+impl TryFrom<&PacketFrame> for HandshakeInit {
+    type Error = String;
+
+    fn try_from(frame: &PacketFrame) -> Result<Self, Self::Error> {
+        Self::from_frame(frame)
+    }
+}
+
+impl TryFrom<PacketFrame> for HandshakeInit {
+    type Error = String;
+
+    fn try_from(frame: PacketFrame) -> Result<Self, Self::Error> {
+        Self::from_frame(&frame)
     }
 }
 
@@ -272,6 +315,32 @@ impl HandshakeResponse {
         )
     }
 
+    /// Returns the hex-encoded representation of the 16-byte nonce.
+    pub fn nonce_hex(&self) -> String {
+        self.nonce.iter().map(|b| format!("{:02x}", b)).collect()
+    }
+
+    /// Checks whether the nonce matches the expected byte array.
+    pub fn matches_nonce(&self, expected: &[u8; HANDSHAKE_NONCE_SIZE]) -> bool {
+        &self.nonce == expected
+    }
+
+    /// Wraps this `HandshakeResponse` payload in a `PacketFrame` with `PacketType::HandshakeResp`.
+    pub fn to_frame(&self, seq: u64) -> Result<PacketFrame, String> {
+        PacketFrame::new(PacketType::HandshakeResp, seq, self.to_bytes())
+    }
+
+    /// Decodes a `HandshakeResponse` message from an incoming `PacketFrame`, verifying packet type.
+    pub fn from_frame(frame: &PacketFrame) -> Result<Self, String> {
+        if frame.packet_type() != PacketType::HandshakeResp {
+            return Err(format!(
+                "Expected PacketType::HandshakeResp, got {}",
+                frame.packet_type()
+            ));
+        }
+        Self::from_bytes(frame.payload())
+    }
+
     pub fn encoded_len(&self) -> usize {
         4 + self.ciphertext.encoded_len() + HANDSHAKE_NONCE_SIZE + 4 + self.signature.encoded_len()
     }
@@ -352,6 +421,22 @@ impl From<&HandshakeResponse> for Vec<u8> {
 impl From<HandshakeResponse> for Vec<u8> {
     fn from(resp: HandshakeResponse) -> Self {
         resp.to_bytes()
+    }
+}
+
+impl TryFrom<&PacketFrame> for HandshakeResponse {
+    type Error = String;
+
+    fn try_from(frame: &PacketFrame) -> Result<Self, Self::Error> {
+        Self::from_frame(frame)
+    }
+}
+
+impl TryFrom<PacketFrame> for HandshakeResponse {
+    type Error = String;
+
+    fn try_from(frame: PacketFrame) -> Result<Self, Self::Error> {
+        Self::from_frame(&frame)
     }
 }
 
@@ -539,6 +624,57 @@ mod tests {
         invalid_resp.nonce = [0u8; HANDSHAKE_NONCE_SIZE];
         assert!(!invalid_resp.is_valid_nonce());
         assert!(invalid_resp.validate().is_err());
+    }
+
+    #[test]
+    fn test_handshake_frame_conversions_and_nonce_helpers() {
+        let kem_keys = HybridKemKeyPair::generate();
+        let sig_keys = HybridSigKeyPair::generate();
+        let nonce = [0xABu8; HANDSHAKE_NONCE_SIZE];
+
+        // HandshakeInit framing and nonce checks
+        let init = HandshakeInit::create(kem_keys.public_key.clone(), nonce, &sig_keys.secret_key);
+        assert_eq!(init.nonce_hex(), "abababababababababababababababab");
+        assert!(init.matches_nonce(&nonce));
+        assert!(!init.matches_nonce(&[0u8; HANDSHAKE_NONCE_SIZE]));
+
+        let frame_init = init.to_frame(1).expect("HandshakeInit to_frame failed");
+        assert_eq!(frame_init.packet_type(), PacketType::HandshakeInit);
+        assert_eq!(frame_init.seq(), 1);
+
+        let decoded_init = HandshakeInit::from_frame(&frame_init).expect("from_frame failed");
+        assert_eq!(decoded_init, init);
+
+        let try_from_ref: HandshakeInit = (&frame_init).try_into().expect("TryFrom &PacketFrame failed");
+        assert_eq!(try_from_ref, init);
+
+        let try_from_val: HandshakeInit = frame_init.try_into().expect("TryFrom PacketFrame failed");
+        assert_eq!(try_from_val, init);
+
+        // HandshakeResponse framing and nonce checks
+        let (ct, _) = encapsulate_hybrid(&kem_keys.public_key);
+        let resp = HandshakeResponse::create(ct, nonce, &sig_keys.secret_key);
+        assert_eq!(resp.nonce_hex(), "abababababababababababababababab");
+        assert!(resp.matches_nonce(&nonce));
+        assert!(!resp.matches_nonce(&[0u8; HANDSHAKE_NONCE_SIZE]));
+
+        let frame_resp = resp.to_frame(2).expect("HandshakeResponse to_frame failed");
+        assert_eq!(frame_resp.packet_type(), PacketType::HandshakeResp);
+        assert_eq!(frame_resp.seq(), 2);
+
+        let decoded_resp = HandshakeResponse::from_frame(&frame_resp).expect("from_frame failed");
+        assert_eq!(decoded_resp, resp);
+
+        let try_resp_ref: HandshakeResponse = (&frame_resp).try_into().expect("TryFrom &PacketFrame failed");
+        assert_eq!(try_resp_ref, resp);
+
+        let try_resp_val: HandshakeResponse = frame_resp.try_into().expect("TryFrom PacketFrame failed");
+        assert_eq!(try_resp_val, resp);
+
+        // Wrong packet type rejection
+        let bad_frame = PacketFrame::data(3, b"dummy".to_vec()).unwrap();
+        assert!(HandshakeInit::from_frame(&bad_frame).is_err());
+        assert!(HandshakeResponse::from_frame(&bad_frame).is_err());
     }
 }
 
