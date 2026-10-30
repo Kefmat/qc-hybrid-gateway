@@ -577,6 +577,21 @@ impl Session {
         self.rx_filter.seen_count()
     }
 
+    /// Checks if a received sequence number would be accepted by the anti-replay filter without mutating filter state.
+    pub fn would_accept_rx(&self, seq: u64) -> bool {
+        self.rx_filter.would_accept(seq)
+    }
+
+    /// Checks if a received sequence number is a replay of an already observed packet within the sliding window.
+    pub fn is_rx_replay(&self, seq: u64) -> bool {
+        self.rx_filter.is_replay(seq)
+    }
+
+    /// Returns the minimum sequence number that can still be accepted by the sliding window.
+    pub fn min_valid_rx_seq(&self) -> u64 {
+        self.rx_filter.min_valid_seq()
+    }
+
     pub fn metrics(&self) -> &SessionMetrics {
         &self.metrics
     }
@@ -656,6 +671,22 @@ impl Session {
         self.metrics.rx_bytes += plaintext.len() as u64;
 
         Ok(plaintext)
+    }
+
+    /// Encrypts an application data payload and returns an authenticated `PacketFrame` of type `PacketType::Data`.
+    pub fn encrypt_data(&mut self, plaintext: &[u8]) -> Result<PacketFrame, String> {
+        self.encrypt_packet(PacketType::Data, plaintext)
+    }
+
+    /// Decrypts an application data packet frame, validating that the frame is of type `PacketType::Data`.
+    pub fn decrypt_data(&mut self, frame: &PacketFrame) -> Result<Vec<u8>, String> {
+        if frame.packet_type() != PacketType::Data {
+            return Err(format!(
+                "Expected Data packet, received: {}",
+                frame.packet_type()
+            ));
+        }
+        self.decrypt_packet(frame)
     }
 
     pub fn create_ping(&mut self, timestamp: u64) -> Result<PacketFrame, String> {
@@ -1539,6 +1570,44 @@ mod tests {
         let debug_established = format!("{:?}", client);
         assert!(debug_established.contains("has_tx_cipher: true"));
         assert!(debug_established.contains("has_rx_cipher: true"));
+    }
+
+    #[test]
+    fn test_session_data_helpers_and_replay_delegation() {
+        let keys = SessionKeys::new([0x33u8; 32], [0x44u8; 32]);
+        let mut client = Session::new_client();
+        let mut server = Session::new_server();
+
+        client.establish(&keys).unwrap();
+        server.establish(&keys).unwrap();
+
+        // Anti-replay delegation queries before traffic
+        assert!(server.would_accept_rx(1));
+        assert!(!server.is_rx_replay(1));
+        assert_eq!(server.min_valid_rx_seq(), 0);
+
+        // Encrypt and decrypt data
+        let payload = b"streamlined application message";
+        let frame = client.encrypt_data(payload).expect("encrypt_data failed");
+        assert_eq!(frame.packet_type(), PacketType::Data);
+        assert_eq!(frame.seq(), 1);
+
+        assert!(server.would_accept_rx(1));
+        let decrypted = server.decrypt_data(&frame).expect("decrypt_data failed");
+        assert_eq!(decrypted, payload);
+
+        // After processing, seq 1 should be recognized as replay and not accepted
+        assert!(!server.would_accept_rx(1));
+        assert!(server.is_rx_replay(1));
+
+        // Replaying same frame must fail
+        assert!(server.decrypt_data(&frame).is_err());
+
+        // Decrypt data rejects non-data frames
+        let ping_frame = client.create_ping(123456).expect("create_ping failed");
+        let err = server.decrypt_data(&ping_frame);
+        assert!(err.is_err());
+        assert!(err.unwrap_err().contains("Expected Data packet"));
     }
 }
 
