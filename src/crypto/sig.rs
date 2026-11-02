@@ -8,6 +8,7 @@ use pqcrypto_dilithium::dilithium3::{
 };
 use pqcrypto_traits::sign::{DetachedSignature as _, PublicKey as _, SecretKey as _};
 use rand::rngs::OsRng;
+use sha2::{Digest, Sha256};
 use zeroize::Zeroize;
 
 pub const ED25519_PUBLIC_KEY_SIZE: usize = 32;
@@ -77,6 +78,17 @@ impl HybridSigPublicKey {
         bytes.extend_from_slice(&self.ed25519_pk);
         bytes.extend_from_slice(self.dilithium_pk.as_bytes());
         bytes
+    }
+
+    /// Returns the hex string representation of the Ed25519 public key.
+    pub fn ed25519_pk_hex(&self) -> String {
+        self.ed25519_pk.iter().map(|b| format!("{:02x}", b)).collect()
+    }
+
+    /// Returns an 8-hex-character SHA-256 fingerprint of the serialized hybrid public key.
+    pub fn fingerprint(&self) -> String {
+        let digest = Sha256::digest(self.to_bytes());
+        digest[..4].iter().map(|b| format!("{:02x}", b)).collect()
     }
 
 
@@ -242,6 +254,17 @@ impl HybridSignature {
         bytes.extend_from_slice(&self.ed25519_sig);
         bytes.extend_from_slice(self.dilithium_sig.as_bytes());
         bytes
+    }
+
+    /// Returns the hex string representation of the Ed25519 signature.
+    pub fn ed25519_sig_hex(&self) -> String {
+        self.ed25519_sig.iter().map(|b| format!("{:02x}", b)).collect()
+    }
+
+    /// Returns an 8-hex-character SHA-256 fingerprint of the serialized hybrid signature.
+    pub fn fingerprint(&self) -> String {
+        let digest = Sha256::digest(self.to_bytes());
+        digest[..4].iter().map(|b| format!("{:02x}", b)).collect()
     }
 
 
@@ -524,6 +547,21 @@ mod tests {
         let sig_display = format!("{}", sig);
         let expected_sig_str = format!("HybridSignature(ed25519=64B, dilithium={}B)", sig.dilithium_sig_bytes().len());
         assert_eq!(sig_display, expected_sig_str);
+    }
+
+    #[test]
+    fn test_sig_hex_and_fingerprints() {
+        let pair = HybridSigKeyPair::generate();
+        let pk = pair.public_key();
+
+        let pk_hex = pk.ed25519_pk_hex();
+        assert_eq!(pk_hex.len(), 64);
+        assert_eq!(pk.fingerprint().len(), 8);
+
+        let sig = sign_hybrid(b"hex-and-fingerprint-test", pair.secret_key());
+        let sig_hex = sig.ed25519_sig_hex();
+        assert_eq!(sig_hex.len(), 128); // 64 bytes = 128 hex chars
+        assert_eq!(sig.fingerprint().len(), 8);
     }
 }
 
