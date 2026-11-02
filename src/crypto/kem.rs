@@ -4,6 +4,7 @@ use pqcrypto_kyber::kyber768::{
 };
 use pqcrypto_traits::kem::{Ciphertext as _, PublicKey as _, SecretKey as _, SharedSecret as _};
 use rand::rngs::OsRng;
+use sha2::{Digest, Sha256};
 use x25519_dalek::{EphemeralSecret, PublicKey as X25519PublicKey, StaticSecret};
 use zeroize::Zeroize;
 
@@ -75,6 +76,17 @@ impl HybridKemPublicKey {
         bytes.extend_from_slice(&self.x25519_pk);
         bytes.extend_from_slice(self.kyber_pk.as_bytes());
         bytes
+    }
+
+    /// Returns the hex string representation of the X25519 public key.
+    pub fn x25519_pk_hex(&self) -> String {
+        self.x25519_pk.iter().map(|b| format!("{:02x}", b)).collect()
+    }
+
+    /// Returns an 8-hex-character SHA-256 fingerprint of the serialized hybrid public key.
+    pub fn fingerprint(&self) -> String {
+        let digest = Sha256::digest(self.to_bytes());
+        digest[..4].iter().map(|b| format!("{:02x}", b)).collect()
     }
 
 
@@ -240,6 +252,17 @@ impl HybridKemCiphertext {
         bytes.extend_from_slice(&self.x25519_ephemeral_pk);
         bytes.extend_from_slice(self.kyber_ct.as_bytes());
         bytes
+    }
+
+    /// Returns the hex string representation of the ephemeral X25519 public key.
+    pub fn x25519_ephemeral_hex(&self) -> String {
+        self.x25519_ephemeral_pk.iter().map(|b| format!("{:02x}", b)).collect()
+    }
+
+    /// Returns an 8-hex-character SHA-256 fingerprint of the serialized hybrid ciphertext.
+    pub fn fingerprint(&self) -> String {
+        let digest = Sha256::digest(self.to_bytes());
+        digest[..4].iter().map(|b| format!("{:02x}", b)).collect()
     }
 
 
@@ -522,6 +545,21 @@ mod tests {
         let (ct, _) = encapsulate_hybrid(pair.public_key());
         let ct_display = format!("{}", ct);
         assert!(ct_display.contains("HybridKemCiphertext(x25519_ephemeral=32B, kyber_ct=1088B)"));
+    }
+
+    #[test]
+    fn test_kem_hex_and_fingerprints() {
+        let pair = HybridKemKeyPair::generate();
+        let pk = pair.public_key();
+
+        let pk_hex = pk.x25519_pk_hex();
+        assert_eq!(pk_hex.len(), 64);
+        assert_eq!(pk.fingerprint().len(), 8);
+
+        let (ct, _) = encapsulate_hybrid(pk);
+        let ct_hex = ct.x25519_ephemeral_hex();
+        assert_eq!(ct_hex.len(), 64);
+        assert_eq!(ct.fingerprint().len(), 8);
     }
 }
 
