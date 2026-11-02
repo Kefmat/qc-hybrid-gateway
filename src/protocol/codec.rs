@@ -1,3 +1,4 @@
+use std::fmt;
 use bytes::{Buf, BytesMut};
 use crate::protocol::{PacketFrame, PacketHeader, HEADER_SIZE, MAX_FRAME_SIZE};
 
@@ -35,6 +36,13 @@ impl FrameDecoder {
     /// Feeds an already encoded `PacketFrame` directly into the decoder buffer.
     pub fn feed_frame(&mut self, frame: &PacketFrame) {
         self.feed(&frame.encode());
+    }
+
+    /// Feeds multiple packet frames sequentially into the decoder buffer.
+    pub fn feed_all(&mut self, frames: &[PacketFrame]) {
+        for frame in frames {
+            self.feed_frame(frame);
+        }
     }
 
     pub fn buffer_len(&self) -> usize {
@@ -169,6 +177,44 @@ impl FrameDecoder {
         }
         self.reclaim_unused_capacity();
         Ok(frames)
+    }
+
+    /// Returns a short diagnostic summary of the decoder buffer state.
+    pub fn summary(&self) -> String {
+        format!(
+            "FrameDecoder(len={}, cap={}, max={})",
+            self.buffer_len(),
+            self.capacity(),
+            self.max_frame_size
+        )
+    }
+
+    /// Returns a streaming iterator that yields frames as they become available.
+    pub fn iter_frames(&mut self) -> FrameIter<'_> {
+        FrameIter { decoder: self }
+    }
+}
+
+impl fmt::Display for FrameDecoder {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.summary())
+    }
+}
+
+/// Streaming iterator that drains and yields decoded frames from a `FrameDecoder`.
+pub struct FrameIter<'a> {
+    decoder: &'a mut FrameDecoder,
+}
+
+impl<'a> Iterator for FrameIter<'a> {
+    type Item = Result<PacketFrame, String>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.decoder.decode_frame() {
+            Ok(Some(frame)) => Some(Ok(frame)),
+            Ok(None) => None,
+            Err(e) => Some(Err(e)),
+        }
     }
 }
 
@@ -439,5 +485,29 @@ mod tests {
         decoder.feed(&vec![0u8; 100]);
         assert!(decoder.is_full());
         assert_eq!(decoder.available_capacity(), 0);
+    }
+
+    #[test]
+    fn test_codec_iterator_display_and_feed_all() {
+        let mut decoder = FrameDecoder::with_max_frame_size(1024);
+        let summary_str = decoder.summary();
+        assert!(summary_str.contains("FrameDecoder(len=0, cap="));
+        assert!(summary_str.contains("max=1024)"));
+        assert_eq!(format!("{}", decoder), summary_str);
+
+        let frames = vec![
+            PacketFrame::data(1, b"first-frame".to_vec()).unwrap(),
+            PacketFrame::ping(2, 42).unwrap(),
+            PacketFrame::data(3, b"third-frame".to_vec()).unwrap(),
+        ];
+
+        decoder.feed_all(&frames);
+        assert!(!decoder.is_empty());
+
+        let decoded: Result<Vec<PacketFrame>, String> = decoder.iter_frames().collect();
+        let decoded_frames = decoded.expect("iter_frames failed");
+        assert_eq!(decoded_frames.len(), 3);
+        assert_eq!(decoded_frames, frames);
+        assert!(decoder.is_empty());
     }
 }
