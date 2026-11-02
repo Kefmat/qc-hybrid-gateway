@@ -34,6 +34,16 @@ impl ErrorKind {
     pub const fn is_state(&self) -> bool {
         matches!(self, ErrorKind::State)
     }
+
+    /// Returns a slice containing all possible `ErrorKind` variants.
+    pub const fn all() -> &'static [ErrorKind] {
+        &[
+            ErrorKind::Framing,
+            ErrorKind::Replay,
+            ErrorKind::Crypto,
+            ErrorKind::State,
+        ]
+    }
 }
 
 impl AsRef<str> for ErrorKind {
@@ -157,6 +167,45 @@ impl ProtocolError {
     pub const fn is_state_error(&self) -> bool {
         matches!(self.kind(), ErrorKind::State)
     }
+
+    /// Returns the static variant name of the error.
+    pub const fn name(&self) -> &'static str {
+        match self {
+            ProtocolError::BufferTooShort { .. } => "BufferTooShort",
+            ProtocolError::InvalidVersion(_) => "InvalidVersion",
+            ProtocolError::UnknownPacketType(_) => "UnknownPacketType",
+            ProtocolError::FrameTooLarge { .. } => "FrameTooLarge",
+            ProtocolError::PayloadTruncated { .. } => "PayloadTruncated",
+            ProtocolError::ReplayDetected(_) => "ReplayDetected",
+            ProtocolError::CryptoError(_) => "CryptoError",
+            ProtocolError::InvalidState(_) => "InvalidState",
+        }
+    }
+
+    /// Returns a distinct numeric wire error code for telemetry and diagnostic logging.
+    pub const fn error_code(&self) -> u16 {
+        match self {
+            ProtocolError::BufferTooShort { .. } => 1001,
+            ProtocolError::InvalidVersion(_) => 1002,
+            ProtocolError::UnknownPacketType(_) => 1003,
+            ProtocolError::FrameTooLarge { .. } => 1004,
+            ProtocolError::PayloadTruncated { .. } => 1005,
+            ProtocolError::ReplayDetected(_) => 2001,
+            ProtocolError::CryptoError(_) => 3001,
+            ProtocolError::InvalidState(_) => 4001,
+        }
+    }
+
+    /// Checks whether this error belongs to the specified `ErrorKind`.
+    pub const fn matches_kind(&self, kind: ErrorKind) -> bool {
+        match (self.kind(), kind) {
+            (ErrorKind::Framing, ErrorKind::Framing) => true,
+            (ErrorKind::Replay, ErrorKind::Replay) => true,
+            (ErrorKind::Crypto, ErrorKind::Crypto) => true,
+            (ErrorKind::State, ErrorKind::State) => true,
+            _ => false,
+        }
+    }
 }
 
 impl From<ProtocolError> for std::io::Error {
@@ -180,6 +229,18 @@ impl From<&ProtocolError> for std::io::Error {
             ErrorKind::State => std::io::ErrorKind::NotConnected,
         };
         std::io::Error::new(io_kind, err.to_string())
+    }
+}
+
+impl From<ProtocolError> for String {
+    fn from(err: ProtocolError) -> Self {
+        err.to_string()
+    }
+}
+
+impl From<&ProtocolError> for String {
+    fn from(err: &ProtocolError) -> Self {
+        err.to_string()
     }
 }
 
@@ -323,6 +384,41 @@ mod tests {
 
         let io_state: std::io::Error = (&err_state).into();
         assert_eq!(io_state.kind(), std::io::ErrorKind::NotConnected);
+    }
+
+    #[test]
+    fn test_error_codes_names_and_kind_matching() {
+        assert_eq!(ErrorKind::all().len(), 4);
+        assert!(ErrorKind::all().contains(&ErrorKind::Framing));
+        assert!(ErrorKind::all().contains(&ErrorKind::Replay));
+        assert!(ErrorKind::all().contains(&ErrorKind::Crypto));
+        assert!(ErrorKind::all().contains(&ErrorKind::State));
+
+        let errs = [
+            (ProtocolError::buffer_too_short(10, 2), "BufferTooShort", 1001, ErrorKind::Framing),
+            (ProtocolError::invalid_version(4), "InvalidVersion", 1002, ErrorKind::Framing),
+            (ProtocolError::unknown_packet_type(0xFF), "UnknownPacketType", 1003, ErrorKind::Framing),
+            (ProtocolError::frame_too_large(100, 50), "FrameTooLarge", 1004, ErrorKind::Framing),
+            (ProtocolError::payload_truncated(50, 10), "PayloadTruncated", 1005, ErrorKind::Framing),
+            (ProtocolError::replay_detected(7), "ReplayDetected", 2001, ErrorKind::Replay),
+            (ProtocolError::crypto_error("fail"), "CryptoError", 3001, ErrorKind::Crypto),
+            (ProtocolError::invalid_state("halt"), "InvalidState", 4001, ErrorKind::State),
+        ];
+
+        for (err, expected_name, expected_code, expected_kind) in &errs {
+            assert_eq!(err.name(), *expected_name);
+            assert_eq!(err.error_code(), *expected_code);
+            assert!(err.matches_kind(*expected_kind));
+            assert!(!err.matches_kind(match expected_kind {
+                ErrorKind::Framing => ErrorKind::Crypto,
+                _ => ErrorKind::Framing,
+            }));
+
+            let owned_str: String = err.clone().into();
+            assert_eq!(owned_str, err.to_string());
+            let ref_str: String = err.into();
+            assert_eq!(ref_str, err.to_string());
+        }
     }
 }
 
