@@ -169,6 +169,11 @@ impl SessionRole {
             _ => false,
         }
     }
+
+    /// Returns a slice of all possible `SessionRole` variants.
+    pub const fn all() -> &'static [SessionRole] {
+        &[SessionRole::Client, SessionRole::Server]
+    }
 }
 
 impl AsRef<str> for SessionRole {
@@ -259,6 +264,17 @@ impl SessionState {
             (SessionState::Closed, _) => false,
             _ => false,
         }
+    }
+
+    /// Returns a slice of all possible `SessionState` variants.
+    pub const fn all() -> &'static [SessionState] {
+        &[
+            SessionState::Uninitialized,
+            SessionState::Handshaking,
+            SessionState::Established,
+            SessionState::Rekeying,
+            SessionState::Closed,
+        ]
     }
 }
 
@@ -385,6 +401,31 @@ impl SessionMetrics {
             rtt_str,
             avg_str
         )
+    }
+
+    /// Resets all counters and RTT telemetry back to default zero values.
+    pub fn reset(&mut self) {
+        *self = Self::default();
+    }
+
+    /// Computes the ratio of dropped replay packets over total inbound attempts (rx_packets + replays_dropped).
+    pub fn replay_drop_ratio(&self) -> f64 {
+        let total_rx = self.rx_packets.saturating_add(self.replays_dropped);
+        if total_rx == 0 {
+            0.0
+        } else {
+            self.replays_dropped as f64 / total_rx as f64
+        }
+    }
+
+    /// Returns whether an RTT measurement has been recorded.
+    pub fn has_active_rtt(&self) -> bool {
+        self.last_rtt_ms.is_some()
+    }
+
+    /// Returns the most recent round-trip time in milliseconds, if available.
+    pub fn rtt_ms(&self) -> Option<u64> {
+        self.last_rtt_ms
     }
 }
 
@@ -544,6 +585,16 @@ impl Session {
 
     pub fn remaining_rekey_quota(&self) -> u64 {
         self.rekey_threshold.saturating_sub(self.tx_seq)
+    }
+
+    /// Returns the number of transmissions remaining before reaching the rekey threshold.
+    pub fn remaining_tx_until_rekey(&self) -> u64 {
+        self.remaining_rekey_quota()
+    }
+
+    /// Checks whether the transmission sequence counter has reached or exceeded the rekey threshold.
+    pub fn rekey_threshold_reached(&self) -> bool {
+        self.tx_seq >= self.rekey_threshold
     }
 
     pub fn is_rekey_imminent(&self, margin: u64) -> bool {
@@ -1608,6 +1659,52 @@ mod tests {
         let err = server.decrypt_data(&ping_frame);
         assert!(err.is_err());
         assert!(err.unwrap_err().contains("Expected Data packet"));
+    }
+
+    #[test]
+    fn test_session_variants_metrics_and_rekey_checks() {
+        assert_eq!(SessionRole::all(), &[SessionRole::Client, SessionRole::Server]);
+        assert_eq!(
+            SessionState::all(),
+            &[
+                SessionState::Uninitialized,
+                SessionState::Handshaking,
+                SessionState::Established,
+                SessionState::Rekeying,
+                SessionState::Closed,
+            ]
+        );
+
+        let mut metrics = SessionMetrics {
+            tx_packets: 10,
+            rx_packets: 8,
+            tx_bytes: 100,
+            rx_bytes: 80,
+            replays_dropped: 2,
+            rekeys_completed: 1,
+            pings_sent: 1,
+            pongs_received: 1,
+            last_rtt_ms: Some(15),
+        };
+
+        assert!(metrics.has_active_rtt());
+        assert_eq!(metrics.rtt_ms(), Some(15));
+        // total_rx = 8 + 2 = 10, replays_dropped = 2 => ratio = 0.2
+        assert!((metrics.replay_drop_ratio() - 0.2).abs() < 1e-6);
+
+        metrics.reset();
+        assert_eq!(metrics.total_packets(), 0);
+        assert!(!metrics.has_active_rtt());
+        assert_eq!(metrics.replay_drop_ratio(), 0.0);
+
+        let mut session = Session::new_client();
+        session.set_rekey_threshold(5);
+        assert_eq!(session.remaining_tx_until_rekey(), 5);
+        assert!(!session.rekey_threshold_reached());
+
+        session.tx_seq = 5;
+        assert_eq!(session.remaining_tx_until_rekey(), 0);
+        assert!(session.rekey_threshold_reached());
     }
 }
 
