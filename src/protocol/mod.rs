@@ -56,6 +56,17 @@ impl PacketType {
     pub const fn is_heartbeat(&self) -> bool {
         matches!(self, PacketType::Ping | PacketType::Pong)
     }
+
+    /// Returns a slice containing all possible `PacketType` variants.
+    pub const fn all() -> &'static [PacketType] {
+        &[
+            PacketType::HandshakeInit,
+            PacketType::HandshakeResp,
+            PacketType::Data,
+            PacketType::Ping,
+            PacketType::Pong,
+        ]
+    }
 }
 
 impl AsRef<str> for PacketType {
@@ -434,6 +445,11 @@ impl PacketFrame {
         self.header.matches_seq(expected_seq)
     }
 
+    /// Checks if this frame's protocol version matches the expected version.
+    pub const fn matches_version(&self, version: u8) -> bool {
+        self.header.version == version
+    }
+
     /// Provides mutable access to the internal payload buffer.
     pub fn payload_mut(&mut self) -> &mut Vec<u8> {
         &mut self.payload
@@ -588,15 +604,40 @@ impl AntiReplayFilter {
             false // Too old
         }
     }
+
+    /// Returns a sorted list of all active sequence numbers currently recorded in the sliding window.
+    pub fn seen_sequences(&self) -> Vec<u64> {
+        let mut seqs: Vec<u64> = self.seen.iter().copied().collect();
+        seqs.sort_unstable();
+        seqs
+    }
+
+    /// Returns the active sequence range `(min_valid_seq, highest_seq)`.
+    pub fn window_range(&self) -> (u64, u64) {
+        (self.min_valid_seq(), self.highest_seq)
+    }
+
+    /// Computes the ratio of stored sequence numbers relative to the window size.
+    pub fn fill_ratio(&self) -> f64 {
+        if self.window_size == 0 {
+            0.0
+        } else {
+            (self.seen.len() as f64 / self.window_size as f64).min(1.0)
+        }
+    }
+
+    /// Returns a diagnostic summary string for the anti-replay filter.
+    pub fn summary(&self) -> String {
+        format!(
+            "AntiReplayFilter(window={}, highest_seq={}, seen={})",
+            self.window_size, self.highest_seq, self.seen.len()
+        )
+    }
 }
 
 impl fmt::Display for AntiReplayFilter {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "AntiReplayFilter(window={}, highest_seq={}, seen={})",
-            self.window_size, self.highest_seq, self.seen.len()
-        )
+        write!(f, "{}", self.summary())
     }
 }
 
@@ -1003,6 +1044,44 @@ mod tests {
         assert_eq!(frame.payload_len(), 0);
         assert_eq!(frame.header.payload_len, 0);
         assert_eq!(frame.summary(), "Data:seq=42,len=0");
+    }
+
+    #[test]
+    fn test_packet_type_all_and_replay_window_analytics() {
+        assert_eq!(
+            PacketType::all(),
+            &[
+                PacketType::HandshakeInit,
+                PacketType::HandshakeResp,
+                PacketType::Data,
+                PacketType::Ping,
+                PacketType::Pong,
+            ]
+        );
+
+        let frame = PacketFrame::data(1, vec![1, 2, 3]).unwrap();
+        assert!(frame.matches_version(PROTOCOL_VERSION));
+        assert!(!frame.matches_version(PROTOCOL_VERSION + 1));
+
+        let mut filter = AntiReplayFilter::new(10);
+        assert_eq!(filter.window_range(), (0, 0));
+        assert_eq!(filter.fill_ratio(), 0.0);
+        assert!(filter.seen_sequences().is_empty());
+
+        filter.check_and_update(5);
+        filter.check_and_update(3);
+        filter.check_and_update(7);
+
+        assert_eq!(filter.window_range(), (0, 7));
+        assert_eq!(filter.seen_sequences(), vec![3, 5, 7]);
+        // 3 seen out of window 10 => 0.3
+        assert!((filter.fill_ratio() - 0.3).abs() < 1e-6);
+
+        let summary = filter.summary();
+        assert!(summary.contains("window=10"));
+        assert!(summary.contains("highest_seq=7"));
+        assert!(summary.contains("seen=3"));
+        assert_eq!(format!("{}", filter), summary);
     }
 }
 
