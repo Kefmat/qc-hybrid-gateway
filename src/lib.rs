@@ -1,6 +1,7 @@
 pub mod crypto;
 pub mod protocol;
 pub mod session;
+pub mod transport;
 
 pub use crypto::aead::AeadCipher;
 pub use crypto::kdf::{
@@ -14,6 +15,7 @@ pub use protocol::{
     PacketType, ProtocolError,
 };
 pub use session::{Session, SessionId, SessionMetrics, SessionRole, SessionState, SESSION_ID_SIZE};
+pub use transport::{EstablishedClientConnection, TunnelClient, TunnelConfig, TunnelServer};
 
 #[cfg(test)]
 mod tests {
