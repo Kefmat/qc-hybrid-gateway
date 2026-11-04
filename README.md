@@ -2,7 +2,7 @@
 
 [![Rust](https://img.shields.io/badge/rust-1.75%2B-orange.svg)](https://www.rust-lang.org/)
 [![License](https://img.shields.io/badge/license-MIT%2FApache--2.0-blue.svg)](Cargo.toml)
-[![Tests](https://img.shields.io/badge/tests-140%20passing-brightgreen.svg)](https://github.com/Kefmat/qc-hybrid-gateway)
+[![Tests](https://img.shields.io/badge/tests-157%20passing-brightgreen.svg)](https://github.com/Kefmat/qc-hybrid-gateway)
 [![PQC](https://img.shields.io/badge/NIST-FIPS%20203%20%7C%20FIPS%20204-purple.svg)](https://csrc.nist.gov/pubs/fips/203/final)
 
 A high-performance Post-Quantum Hybrid Cryptographic Gateway and Secure Tunnel engine written in Rust.
@@ -33,6 +33,12 @@ The gateway combines NIST-standardized Post-Quantum Cryptography (PQC) algorithm
 * **Keepalive & Latency Telemetry**: Bidirectional Ping/Pong heartbeat frames with millisecond RTT measurement and structured telemetry reporting.
 * **Anti-Replay Defense**: Sliding-window bitmask filter detecting replayed and out-of-order packets with non-mutating pre-filtering (`would_accept`, `is_replay`).
 * **Memory Safety & Redaction**: Automatic secret key zeroization on drop (`zeroize`) and safe `Debug` redaction preventing credential leakage in logs.
+
+### 4. Asynchronous TCP Transport & Key Persistence Engine
+* **Asynchronous TCP Engine**: High-throughput `TunnelServer` and `TunnelClient` built on `tokio` asynchronous I/O.
+* **Generic Stream Abstraction**: Transport pipelines are generic over `AsyncRead + AsyncWrite + Unpin + Send`, supporting real TCP sockets (`TcpStream`) in production and zero-overhead memory streams (`tokio::io::duplex`) in test harnesses.
+* **Cryptographic Key Persistence**: File serialization (`save_to_file`, `load_from_file`) and directory-based keypair export/import (`save_to_dir`, `load_from_dir`) for persistent gateway identity deployment.
+* **Mutual Authentication & Trust-On-First-Use**: Configurable server public key pinning (`--server-key`) or Trust-On-First-Use (TOFU) operation with mutual client signature enforcement.
 
 ---
 
@@ -177,8 +183,10 @@ pqc-hybrid-gateway/
     │   ├── handshake.rs    # HandshakeInit and HandshakeResponse messages
     │   ├── codec.rs        # FrameDecoder stream codec helper
     │   └── error.rs        # Protocol and packet error types
-    └── session/
-        └── mod.rs          # Session state machine, rekeying, and bidirectional traffic
+    ├── session/
+    │   └── mod.rs          # Session state machine, rekeying, and bidirectional traffic
+    └── transport/
+        └── mod.rs          # Asynchronous TCP Tunnel Engine (TunnelServer, TunnelClient, EstablishedClientConnection)
 ```
 
 ---
@@ -206,10 +214,45 @@ Runs full end-to-end verification of KEM exchange, signature validation, AEAD ta
 cargo run -- verify
 ```
 
-### Key Generation
-Generate a sample pair of Hybrid KEM and Hybrid Signature public/private keys:
+### Key Generation & File Persistence
+Generate Post-Quantum and classical hybrid keypairs with optional file export:
 ```bash
+# Display generated keys to stdout
 cargo run -- keygen
+
+# Export keys to disk with custom prefix
+cargo run -- keygen --out-dir ./keys --prefix gateway
+# Generates:
+#   ./keys/gateway.kem.pub  (Composite ML-KEM-768 + X25519 Public Key)
+#   ./keys/gateway.kem.sec  (Composite ML-KEM-768 + X25519 Secret Key)
+#   ./keys/gateway.sig.pub  (Composite ML-DSA-65 + Ed25519 Public Key)
+#   ./keys/gateway.sig.sec  (Composite ML-DSA-65 + Ed25519 Secret Key)
+```
+
+### Live TCP Server Engine
+Start a live asynchronous Post-Quantum hybrid TCP tunnel listener:
+```bash
+# Ephemeral server listening on default port 127.0.0.1:8443
+cargo run -- server
+
+# Bind to custom interface/port with persistent identity keys
+cargo run -- server --bind 0.0.0.0:9443 --key-dir ./keys --prefix gateway
+
+# Handle a maximum of 5 client connections before exiting
+cargo run -- server --max-clients 5
+```
+
+### Live TCP Client Engine
+Connect to a running Post-Quantum hybrid TCP gateway server:
+```bash
+# Connect to default 127.0.0.1:8443 and transmit an encrypted payload
+cargo run -- client --message "Hello Quantum Secure World!"
+
+# Run with keepalive pings and trigger a forward-secrecy key ratchet
+cargo run -- client --connect 127.0.0.1:8443 --pings 5 --ratchet
+
+# Use persistent identity keys and pinned server public key verification
+cargo run -- client --key-dir ./keys --prefix client --server-key ./keys/gateway.sig.pub
 ```
 
 ### Interactive Tunnel Simulation
