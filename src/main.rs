@@ -3,13 +3,15 @@ use pqc_hybrid_gateway::crypto::{
     aead::AeadCipher,
     kdf::{derive_session_keys, hash_transcript},
     kem::{decapsulate_hybrid, encapsulate_hybrid, HybridKemKeyPair},
-    sig::{sign_hybrid, verify_hybrid, HybridSigKeyPair},
+    sig::{sign_hybrid, verify_hybrid, HybridSigKeyPair, HybridSigPublicKey},
 };
 use pqc_hybrid_gateway::protocol::{
     AntiReplayFilter, FrameDecoder, HandshakeInit, HandshakeResponse, PacketType,
 };
 use pqc_hybrid_gateway::session::Session;
+use pqc_hybrid_gateway::transport::{TunnelClient, TunnelServer};
 use std::time::Instant;
+use tokio::net::TcpListener;
 
 
 #[derive(Parser)]
@@ -53,12 +55,52 @@ enum Commands {
         #[arg(short, long)]
         json: bool,
     },
+    /// Start a live Post-Quantum hybrid TCP tunnel server
+    Server {
+        /// TCP address and port to bind
+        #[arg(short, long, default_value = "127.0.0.1:8443")]
+        bind: String,
+        /// Maximum number of client connections to handle before exiting
+        #[arg(short, long)]
+        max_clients: Option<usize>,
+        /// Optional directory from which to load server identity keys
+        #[arg(short, long)]
+        key_dir: Option<String>,
+        /// Key name prefix (default: "identity")
+        #[arg(short, long, default_value = "identity")]
+        prefix: String,
+    },
+    /// Connect to a live Post-Quantum hybrid TCP tunnel server
+    Client {
+        /// Server TCP address and port to connect to
+        #[arg(short, long, default_value = "127.0.0.1:8443")]
+        connect: String,
+        /// Message payload to transmit securely
+        #[arg(short, long, default_value = "Hello Post-Quantum World!")]
+        message: String,
+        /// Number of keepalive pings to transmit
+        #[arg(short = 'n', long, default_value_t = 3)]
+        pings: u32,
+        /// Trigger a forward secrecy ratchet rekey step
+        #[arg(short, long)]
+        ratchet: bool,
+        /// Optional directory from which to load client identity keys
+        #[arg(short, long)]
+        key_dir: Option<String>,
+        /// Key name prefix (default: "identity")
+        #[arg(short, long, default_value = "identity")]
+        prefix: String,
+        /// Optional path to server public signature key file for pinned verification
+        #[arg(short = 's', long)]
+        server_key: Option<String>,
+    },
     /// Display cryptographic parameters and architectural specification
     Info,
 }
 
 
-fn main() {
+#[tokio::main]
+async fn main() {
     tracing_subscriber::fmt::init();
     let cli = Cli::parse();
 
@@ -370,6 +412,134 @@ fn main() {
                 }
             }
             println!("=== Tunnel Simulation Succeeded ===");
+        }
+        Commands::Server {
+            bind,
+            max_clients,
+            key_dir,
+            prefix,
+        } => {
+            println!("================================================================================");
+            println!("             PQC Hybrid Gateway - Live TCP Server Engine                        ");
+            println!("================================================================================");
+            let sig_keys = if let Some(dir) = key_dir {
+                println!("[*] Loading server identity keys from '{}' (prefix: '{}')...", dir, prefix);
+                HybridSigKeyPair::load_from_dir(&dir, &prefix).expect("Failed to load server keys")
+            } else {
+                println!("[*] Generating ephemeral server hybrid signature keypair (ML-DSA-65 + Ed25519)...");
+                HybridSigKeyPair::generate()
+            };
+
+            println!("[+] Server Identity Public Key Fingerprint: {}", sig_keys.public_key.fingerprint());
+            println!("[*] Binding TCP listener on {}...", bind);
+            let listener = TcpListener::bind(&bind)
+                .await
+                .unwrap_or_else(|e| panic!("Failed to bind TCP listener on {}: {}", bind, e));
+            println!("[+] Server listening and ready for Post-Quantum hybrid client connections");
+
+            let server = std::sync::Arc::new(TunnelServer::new(sig_keys));
+            let mut client_count = 0;
+
+            while max_clients.map_or(true, |max| client_count < max) {
+                match listener.accept().await {
+                    Ok((stream, peer_addr)) => {
+                        client_count += 1;
+                        println!("\n[+] [Client #{}] Connection established from {}", client_count, peer_addr);
+                        let server_clone = server.clone();
+                        tokio::spawn(async move {
+                            match server_clone.handle_connection(stream, None).await {
+                                Ok(metrics) => {
+                                    println!("[✓] [Client #{}] Completed session: {}", client_count, metrics);
+                                }
+                                Err(e) => {
+                                    eprintln!("[-] [Client #{}] Session error: {}", client_count, e);
+                                }
+                            }
+                        });
+                    }
+                    Err(e) => {
+                        eprintln!("[-] Accept error: {}", e);
+                        break;
+                    }
+                }
+            }
+            println!("\n[+] Server reached client limit ({}). Shutting down.", client_count);
+        }
+        Commands::Client {
+            connect,
+            message,
+            pings,
+            ratchet,
+            key_dir,
+            prefix,
+            server_key,
+        } => {
+            println!("================================================================================");
+            println!("             PQC Hybrid Gateway - Live TCP Client Engine                        ");
+            println!("================================================================================");
+            let sig_keys = if let Some(dir) = key_dir {
+                println!("[*] Loading client identity keys from '{}' (prefix: '{}')...", dir, prefix);
+                HybridSigKeyPair::load_from_dir(&dir, &prefix).expect("Failed to load client keys")
+            } else {
+                println!("[*] Generating ephemeral client hybrid signature keypair (ML-DSA-65 + Ed25519)...");
+                HybridSigKeyPair::generate()
+            };
+
+            let server_sig_pk = if let Some(path) = server_key {
+                println!("[*] Loading pinned server public key from '{}'...", path);
+                Some(HybridSigPublicKey::load_from_file(&path).expect("Failed to load server public key"))
+            } else {
+                println!("[*] No server public key pinned (using Trust-On-First-Use)...");
+                None
+            };
+
+            let client = TunnelClient::with_config(sig_keys, server_sig_pk, Default::default());
+
+            println!("[*] Connecting to Post-Quantum gateway server at {}...", connect);
+            let mut conn = client
+                .connect(&connect)
+                .await
+                .unwrap_or_else(|e| panic!("Connection to {} failed: {}", connect, e));
+            println!("[+] Established Post-Quantum Hybrid Tunnel Session (id: {})", conn.session().session_id());
+
+            // 1. Send data payload
+            println!("\n[*] Transmitting encrypted data payload ({} bytes): '{}'", message.len(), message);
+            let response = conn
+                .send_data(message.as_bytes())
+                .await
+                .expect("Failed to send data frame");
+            println!("[+] Received decrypted server response: '{}'", String::from_utf8_lossy(&response));
+
+            // 2. Transmit keepalive pings
+            if pings > 0 {
+                println!("\n[*] Transmitting {} keepalive ping frame(s)...", pings);
+                for i in 1..=pings {
+                    let rtt = conn.ping().await.expect("Ping failed");
+                    println!("    [+] Ping #{} verified (measured RTT: {}ms)", i, rtt);
+                }
+            }
+
+            // 3. Ratchet if requested
+            if ratchet {
+                println!("\n[*] Advancing symmetric forward secrecy ratchet...");
+                conn.ratchet().await.expect("Ratchet forward secrecy step failed");
+                println!("[+] Ratchet completed! Keys evolved forward.");
+
+                let post_msg = "Post-Ratchet Authenticated Verification Payload";
+                println!("[*] Transmitting post-ratchet encrypted payload: '{}'", post_msg);
+                let post_resp = conn
+                    .send_data(post_msg.as_bytes())
+                    .await
+                    .expect("Failed post-ratchet transmission");
+                println!("[+] Received decrypted server response: '{}'", String::from_utf8_lossy(&post_resp));
+            }
+
+            // 4. Teardown
+            let metrics = conn.metrics().clone();
+            conn.close().await;
+            println!("\n[+] Connection closed gracefully.");
+            println!("    - Final Client Session Metrics: {}", metrics);
+            println!("================================================================================");
         }
     }
 }
