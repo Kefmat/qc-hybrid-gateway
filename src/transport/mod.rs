@@ -202,18 +202,22 @@ impl TunnelServer {
 /// Asynchronous Post-Quantum Hybrid Tunnel Client.
 pub struct TunnelClient {
     pub sig_keys: HybridSigKeyPair,
-    pub server_sig_pk: HybridSigPublicKey,
+    pub server_sig_pk: Option<HybridSigPublicKey>,
     pub config: TunnelConfig,
 }
 
 impl TunnelClient {
     pub fn new(sig_keys: HybridSigKeyPair, server_sig_pk: HybridSigPublicKey) -> Self {
-        Self::with_config(sig_keys, server_sig_pk, TunnelConfig::default())
+        Self::with_config(sig_keys, Some(server_sig_pk), TunnelConfig::default())
+    }
+
+    pub fn new_trust_any(sig_keys: HybridSigKeyPair) -> Self {
+        Self::with_config(sig_keys, None, TunnelConfig::default())
     }
 
     pub fn with_config(
         sig_keys: HybridSigKeyPair,
-        server_sig_pk: HybridSigPublicKey,
+        server_sig_pk: Option<HybridSigPublicKey>,
         config: TunnelConfig,
     ) -> Self {
         Self {
@@ -293,8 +297,10 @@ impl TunnelClient {
             .map_err(|e| format!("Invalid HandshakeResponse payload: {}", e))?;
 
         // 3. Verify server signature and decapsulate shared secret
-        if !resp_msg.verify(&self.server_sig_pk) {
-            return Err("Server HandshakeResponse signature verification failed".to_string());
+        if let Some(ref server_pk) = self.server_sig_pk {
+            if !resp_msg.verify(server_pk) {
+                return Err("Server HandshakeResponse signature verification failed".to_string());
+            }
         }
 
         let client_shared_secret =
@@ -578,7 +584,7 @@ mod tests {
         let server = TunnelServer::with_config(sig1, custom_config.clone());
         assert_eq!(server.config.rekey_threshold, 42);
 
-        let client = TunnelClient::with_config(sig2, server.sig_keys.public_key.clone(), custom_config);
+        let client = TunnelClient::with_config(sig2, Some(server.sig_keys.public_key.clone()), custom_config);
         assert_eq!(client.config.rekey_threshold, 42);
     }
 }
