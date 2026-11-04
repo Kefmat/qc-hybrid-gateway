@@ -26,7 +26,14 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     /// Generate Post-Quantum and classical hybrid keypairs
-    Keygen,
+    Keygen {
+        /// Optional directory to save generated keys
+        #[arg(short, long)]
+        out_dir: Option<String>,
+        /// Key name prefix (default: "identity")
+        #[arg(short, long, default_value = "identity")]
+        prefix: String,
+    },
     /// Run cryptographic verification tests (KEM, Signatures, AEAD, Anti-Replay)
     Verify,
     /// Run cryptographic performance benchmarks
@@ -77,7 +84,7 @@ fn main() {
             println!("      - Anti-Replay Filter:     64-packet sliding window bitmask");
             println!("================================================================================");
         }
-        Commands::Keygen => {
+        Commands::Keygen { out_dir, prefix } => {
             println!("--- Generating Post-Quantum Hybrid Keys ---");
             let kem_keys = HybridKemKeyPair::generate();
             let sig_keys = HybridSigKeyPair::generate();
@@ -89,6 +96,16 @@ fn main() {
             println!("[+] Hybrid Signature Keypair generated:");
             println!("    - Classical (Ed25519 Public Key): {} bytes", sig_keys.public_key.ed25519_pk.len());
             println!("    - Post-Quantum (ML-DSA-65 Public Key): {} bytes", std::mem::size_of_val(&sig_keys.public_key.dilithium_pk));
+
+            if let Some(dir) = out_dir {
+                if let Err(e) = kem_keys.save_to_dir(&dir, &prefix) {
+                    eprintln!("[-] Error saving KEM keys: {}", e);
+                } else if let Err(e) = sig_keys.save_to_dir(&dir, &prefix) {
+                    eprintln!("[-] Error saving Signature keys: {}", e);
+                } else {
+                    println!("[+] Successfully exported keys to '{}/{}*'", dir, prefix);
+                }
+            }
         }
         Commands::Verify => {
             println!("--- Running Cryptographic Verification Suite ---");

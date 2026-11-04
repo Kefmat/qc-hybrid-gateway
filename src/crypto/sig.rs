@@ -108,6 +108,17 @@ impl HybridSigPublicKey {
             dilithium_pk,
         })
     }
+
+    /// Saves the serialized public key to disk at the specified path.
+    pub fn save_to_file(&self, path: impl AsRef<std::path::Path>) -> Result<(), std::io::Error> {
+        std::fs::write(path, self.to_bytes())
+    }
+
+    /// Loads and deserializes a public key from disk.
+    pub fn load_from_file(path: impl AsRef<std::path::Path>) -> Result<Self, String> {
+        let bytes = std::fs::read(path).map_err(|e| format!("Failed to read signature public key file: {}", e))?;
+        Self::from_bytes(&bytes)
+    }
 }
 
 impl TryFrom<&[u8]> for HybridSigPublicKey {
@@ -154,6 +165,44 @@ impl HybridSigSecretKey {
 
     pub fn into_parts(self) -> ([u8; ED25519_PUBLIC_KEY_SIZE], DilithiumSecretKey) {
         (self.ed25519_sk, self.dilithium_sk)
+    }
+
+    pub fn encoded_len(&self) -> usize {
+        ED25519_PUBLIC_KEY_SIZE + self.dilithium_sk.as_bytes().len()
+    }
+
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let mut bytes = Vec::with_capacity(self.encoded_len());
+        bytes.extend_from_slice(&self.ed25519_sk);
+        bytes.extend_from_slice(self.dilithium_sk.as_bytes());
+        bytes
+    }
+
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
+        if bytes.len() < ED25519_PUBLIC_KEY_SIZE {
+            return Err("Byte slice too short for HybridSigSecretKey".to_string());
+        }
+        let mut ed25519_sk = [0u8; ED25519_PUBLIC_KEY_SIZE];
+        ed25519_sk.copy_from_slice(&bytes[..ED25519_PUBLIC_KEY_SIZE]);
+
+        let dilithium_sk = DilithiumSecretKey::from_bytes(&bytes[ED25519_PUBLIC_KEY_SIZE..])
+            .map_err(|e| format!("Failed to parse Dilithium secret key: {:?}", e))?;
+
+        Ok(Self {
+            ed25519_sk,
+            dilithium_sk,
+        })
+    }
+
+    /// Saves the serialized secret key to disk at the specified path.
+    pub fn save_to_file(&self, path: impl AsRef<std::path::Path>) -> Result<(), std::io::Error> {
+        std::fs::write(path, self.to_bytes())
+    }
+
+    /// Loads and deserializes a secret key from disk.
+    pub fn load_from_file(path: impl AsRef<std::path::Path>) -> Result<Self, String> {
+        let bytes = std::fs::read(path).map_err(|e| format!("Failed to read signature secret key file: {}", e))?;
+        Self::from_bytes(&bytes)
     }
 }
 
@@ -341,6 +390,26 @@ impl HybridSigKeyPair {
 
     pub fn into_parts(self) -> (HybridSigPublicKey, HybridSigSecretKey) {
         (self.public_key, self.secret_key)
+    }
+
+    /// Saves both public and secret keys to the specified directory with given prefix.
+    pub fn save_to_dir(&self, dir: impl AsRef<std::path::Path>, prefix: &str) -> Result<(), std::io::Error> {
+        let dir = dir.as_ref();
+        std::fs::create_dir_all(dir)?;
+        self.public_key.save_to_file(dir.join(format!("{}.sig.pub", prefix)))?;
+        self.secret_key.save_to_file(dir.join(format!("{}.sig.key", prefix)))?;
+        Ok(())
+    }
+
+    /// Loads both public and secret keys from the specified directory with given prefix.
+    pub fn load_from_dir(dir: impl AsRef<std::path::Path>, prefix: &str) -> Result<Self, String> {
+        let dir = dir.as_ref();
+        let public_key = HybridSigPublicKey::load_from_file(dir.join(format!("{}.sig.pub", prefix)))?;
+        let secret_key = HybridSigSecretKey::load_from_file(dir.join(format!("{}.sig.key", prefix)))?;
+        Ok(Self {
+            public_key,
+            secret_key,
+        })
     }
 }
 
@@ -562,6 +631,20 @@ mod tests {
         let sig_hex = sig.ed25519_sig_hex();
         assert_eq!(sig_hex.len(), 128); // 64 bytes = 128 hex chars
         assert_eq!(sig.fingerprint().len(), 8);
+    }
+
+    #[test]
+    fn test_sig_key_persistence_and_file_io() {
+        let temp_dir = std::env::temp_dir().join(format!("pqc_sig_test_{}", rand::random::<u64>()));
+        let pair = HybridSigKeyPair::generate();
+
+        pair.save_to_dir(&temp_dir, "test_sig").expect("save_to_dir failed");
+        let loaded = HybridSigKeyPair::load_from_dir(&temp_dir, "test_sig").expect("load_from_dir failed");
+
+        assert_eq!(pair.public_key().to_bytes(), loaded.public_key().to_bytes());
+        assert_eq!(pair.secret_key().to_bytes(), loaded.secret_key().to_bytes());
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
     }
 }
 

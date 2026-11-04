@@ -106,6 +106,17 @@ impl HybridKemPublicKey {
             kyber_pk,
         })
     }
+
+    /// Saves the serialized public key to disk at the specified path.
+    pub fn save_to_file(&self, path: impl AsRef<std::path::Path>) -> Result<(), std::io::Error> {
+        std::fs::write(path, self.to_bytes())
+    }
+
+    /// Loads and deserializes a public key from disk.
+    pub fn load_from_file(path: impl AsRef<std::path::Path>) -> Result<Self, String> {
+        let bytes = std::fs::read(path).map_err(|e| format!("Failed to read KEM public key file: {}", e))?;
+        Self::from_bytes(&bytes)
+    }
 }
 
 impl TryFrom<&[u8]> for HybridKemPublicKey {
@@ -152,6 +163,44 @@ impl HybridKemSecretKey {
 
     pub fn into_parts(self) -> ([u8; X25519_KEY_SIZE], KyberSecretKey) {
         (self.x25519_sk, self.kyber_sk)
+    }
+
+    pub fn encoded_len(&self) -> usize {
+        X25519_KEY_SIZE + self.kyber_sk.as_bytes().len()
+    }
+
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let mut bytes = Vec::with_capacity(self.encoded_len());
+        bytes.extend_from_slice(&self.x25519_sk);
+        bytes.extend_from_slice(self.kyber_sk.as_bytes());
+        bytes
+    }
+
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
+        if bytes.len() < X25519_KEY_SIZE {
+            return Err("Byte slice too short for HybridKemSecretKey".to_string());
+        }
+        let mut x25519_sk = [0u8; X25519_KEY_SIZE];
+        x25519_sk.copy_from_slice(&bytes[..X25519_KEY_SIZE]);
+
+        let kyber_sk = KyberSecretKey::from_bytes(&bytes[X25519_KEY_SIZE..])
+            .map_err(|e| format!("Failed to parse Kyber secret key: {:?}", e))?;
+
+        Ok(Self {
+            x25519_sk,
+            kyber_sk,
+        })
+    }
+
+    /// Saves the serialized secret key to disk at the specified path.
+    pub fn save_to_file(&self, path: impl AsRef<std::path::Path>) -> Result<(), std::io::Error> {
+        std::fs::write(path, self.to_bytes())
+    }
+
+    /// Loads and deserializes a secret key from disk.
+    pub fn load_from_file(path: impl AsRef<std::path::Path>) -> Result<Self, String> {
+        let bytes = std::fs::read(path).map_err(|e| format!("Failed to read KEM secret key file: {}", e))?;
+        Self::from_bytes(&bytes)
     }
 }
 
@@ -337,6 +386,26 @@ impl HybridKemKeyPair {
 
     pub fn into_parts(self) -> (HybridKemPublicKey, HybridKemSecretKey) {
         (self.public_key, self.secret_key)
+    }
+
+    /// Saves both public and secret keys to the specified directory with given prefix.
+    pub fn save_to_dir(&self, dir: impl AsRef<std::path::Path>, prefix: &str) -> Result<(), std::io::Error> {
+        let dir = dir.as_ref();
+        std::fs::create_dir_all(dir)?;
+        self.public_key.save_to_file(dir.join(format!("{}.kem.pub", prefix)))?;
+        self.secret_key.save_to_file(dir.join(format!("{}.kem.key", prefix)))?;
+        Ok(())
+    }
+
+    /// Loads both public and secret keys from the specified directory with given prefix.
+    pub fn load_from_dir(dir: impl AsRef<std::path::Path>, prefix: &str) -> Result<Self, String> {
+        let dir = dir.as_ref();
+        let public_key = HybridKemPublicKey::load_from_file(dir.join(format!("{}.kem.pub", prefix)))?;
+        let secret_key = HybridKemSecretKey::load_from_file(dir.join(format!("{}.kem.key", prefix)))?;
+        Ok(Self {
+            public_key,
+            secret_key,
+        })
     }
 }
 
@@ -560,6 +629,20 @@ mod tests {
         let ct_hex = ct.x25519_ephemeral_hex();
         assert_eq!(ct_hex.len(), 64);
         assert_eq!(ct.fingerprint().len(), 8);
+    }
+
+    #[test]
+    fn test_kem_key_persistence_and_file_io() {
+        let temp_dir = std::env::temp_dir().join(format!("pqc_kem_test_{}", rand::random::<u64>()));
+        let pair = HybridKemKeyPair::generate();
+
+        pair.save_to_dir(&temp_dir, "test_kem").expect("save_to_dir failed");
+        let loaded = HybridKemKeyPair::load_from_dir(&temp_dir, "test_kem").expect("load_from_dir failed");
+
+        assert_eq!(pair.public_key().to_bytes(), loaded.public_key().to_bytes());
+        assert_eq!(pair.secret_key().to_bytes(), loaded.secret_key().to_bytes());
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
     }
 }
 
