@@ -160,6 +160,47 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
+### Asynchronous TCP Tunnel (Server & Client)
+
+```rust
+use pqc_hybrid_gateway::crypto::sig::HybridSigKeyPair;
+use pqc_hybrid_gateway::transport::{TunnelClient, TunnelServer};
+use tokio::io::duplex;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let server_sig = HybridSigKeyPair::generate();
+    let server_sig_pk = server_sig.public_key.clone();
+    let client_sig = HybridSigKeyPair::generate();
+
+    // Use in-memory duplex streams or real TCP connections
+    let (client_io, server_io) = duplex(16384);
+
+    let server = TunnelServer::new(server_sig);
+    let client = TunnelClient::new(client_sig, server_sig_pk);
+
+    // Spawn server handler task
+    let server_task = tokio::spawn(async move {
+        server.handle_stream(server_io, None).await.unwrap()
+    });
+
+    // Establish client connection over stream and send encrypted payload
+    let mut conn = client.connect_stream(client_io).await?;
+    let reply = conn.send_data(b"Hello Post-Quantum World!").await?;
+    println!("Decrypted echo: {}", String::from_utf8_lossy(&reply));
+
+    // Measure heartbeat RTT and advance forward-secrecy key ratchet
+    let rtt = conn.ping().await?;
+    println!("Measured RTT: {}ms", rtt);
+    conn.ratchet().await?;
+
+    conn.close().await;
+    let metrics = server_task.await?;
+    println!("Server session metrics: {}", metrics);
+    Ok(())
+}
+```
+
 ---
 
 ## Directory Structure
