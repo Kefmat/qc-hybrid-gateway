@@ -440,7 +440,7 @@ async fn main() {
             let server = std::sync::Arc::new(TunnelServer::new(sig_keys));
             let mut client_count = 0;
 
-            while max_clients.map_or(true, |max| client_count < max) {
+            while max_clients.is_none_or(|max| client_count < max) {
                 match listener.accept().await {
                     Ok((stream, peer_addr)) => {
                         client_count += 1;

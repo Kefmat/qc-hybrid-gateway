@@ -163,11 +163,10 @@ impl SessionRole {
     }
 
     pub const fn is_peer_of(&self, other: &Self) -> bool {
-        match (self, other) {
-            (SessionRole::Client, SessionRole::Server) => true,
-            (SessionRole::Server, SessionRole::Client) => true,
-            _ => false,
-        }
+        matches!(
+            (self, other),
+            (SessionRole::Client, SessionRole::Server) | (SessionRole::Server, SessionRole::Client)
+        )
     }
 
     /// Returns a slice of all possible `SessionRole` variants.

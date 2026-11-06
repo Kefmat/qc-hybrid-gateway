@@ -198,13 +198,13 @@ impl ProtocolError {
 
     /// Checks whether this error belongs to the specified `ErrorKind`.
     pub const fn matches_kind(&self, kind: ErrorKind) -> bool {
-        match (self.kind(), kind) {
-            (ErrorKind::Framing, ErrorKind::Framing) => true,
-            (ErrorKind::Replay, ErrorKind::Replay) => true,
-            (ErrorKind::Crypto, ErrorKind::Crypto) => true,
-            (ErrorKind::State, ErrorKind::State) => true,
-            _ => false,
-        }
+        matches!(
+            (self.kind(), kind),
+            (ErrorKind::Framing, ErrorKind::Framing)
+                | (ErrorKind::Replay, ErrorKind::Replay)
+                | (ErrorKind::Crypto, ErrorKind::Crypto)
+                | (ErrorKind::State, ErrorKind::State)
+        )
     }
 }
 
