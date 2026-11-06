@@ -80,7 +80,10 @@ impl HybridKemPublicKey {
 
     /// Returns the hex string representation of the X25519 public key.
     pub fn x25519_pk_hex(&self) -> String {
-        self.x25519_pk.iter().map(|b| format!("{:02x}", b)).collect()
+        self.x25519_pk
+            .iter()
+            .map(|b| format!("{:02x}", b))
+            .collect()
     }
 
     /// Returns an 8-hex-character SHA-256 fingerprint of the serialized hybrid public key.
@@ -88,8 +91,6 @@ impl HybridKemPublicKey {
         let digest = Sha256::digest(self.to_bytes());
         digest[..4].iter().map(|b| format!("{:02x}", b)).collect()
     }
-
-
 
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
         if bytes.len() < X25519_KEY_SIZE {
@@ -114,7 +115,8 @@ impl HybridKemPublicKey {
 
     /// Loads and deserializes a public key from disk.
     pub fn load_from_file(path: impl AsRef<std::path::Path>) -> Result<Self, String> {
-        let bytes = std::fs::read(path).map_err(|e| format!("Failed to read KEM public key file: {}", e))?;
+        let bytes = std::fs::read(path)
+            .map_err(|e| format!("Failed to read KEM public key file: {}", e))?;
         Self::from_bytes(&bytes)
     }
 }
@@ -199,7 +201,8 @@ impl HybridKemSecretKey {
 
     /// Loads and deserializes a secret key from disk.
     pub fn load_from_file(path: impl AsRef<std::path::Path>) -> Result<Self, String> {
-        let bytes = std::fs::read(path).map_err(|e| format!("Failed to read KEM secret key file: {}", e))?;
+        let bytes = std::fs::read(path)
+            .map_err(|e| format!("Failed to read KEM secret key file: {}", e))?;
         Self::from_bytes(&bytes)
     }
 }
@@ -268,9 +271,6 @@ impl std::fmt::Display for HybridKemCiphertext {
     }
 }
 
-
-
-
 impl HybridKemCiphertext {
     pub fn x25519_ephemeral_pk(&self) -> &[u8; X25519_KEY_SIZE] {
         &self.x25519_ephemeral_pk
@@ -305,7 +305,10 @@ impl HybridKemCiphertext {
 
     /// Returns the hex string representation of the ephemeral X25519 public key.
     pub fn x25519_ephemeral_hex(&self) -> String {
-        self.x25519_ephemeral_pk.iter().map(|b| format!("{:02x}", b)).collect()
+        self.x25519_ephemeral_pk
+            .iter()
+            .map(|b| format!("{:02x}", b))
+            .collect()
     }
 
     /// Returns an 8-hex-character SHA-256 fingerprint of the serialized hybrid ciphertext.
@@ -313,8 +316,6 @@ impl HybridKemCiphertext {
         let digest = Sha256::digest(self.to_bytes());
         digest[..4].iter().map(|b| format!("{:02x}", b)).collect()
     }
-
-
 
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
         if bytes.len() < X25519_KEY_SIZE {
@@ -389,19 +390,27 @@ impl HybridKemKeyPair {
     }
 
     /// Saves both public and secret keys to the specified directory with given prefix.
-    pub fn save_to_dir(&self, dir: impl AsRef<std::path::Path>, prefix: &str) -> Result<(), std::io::Error> {
+    pub fn save_to_dir(
+        &self,
+        dir: impl AsRef<std::path::Path>,
+        prefix: &str,
+    ) -> Result<(), std::io::Error> {
         let dir = dir.as_ref();
         std::fs::create_dir_all(dir)?;
-        self.public_key.save_to_file(dir.join(format!("{}.kem.pub", prefix)))?;
-        self.secret_key.save_to_file(dir.join(format!("{}.kem.key", prefix)))?;
+        self.public_key
+            .save_to_file(dir.join(format!("{}.kem.pub", prefix)))?;
+        self.secret_key
+            .save_to_file(dir.join(format!("{}.kem.key", prefix)))?;
         Ok(())
     }
 
     /// Loads both public and secret keys from the specified directory with given prefix.
     pub fn load_from_dir(dir: impl AsRef<std::path::Path>, prefix: &str) -> Result<Self, String> {
         let dir = dir.as_ref();
-        let public_key = HybridKemPublicKey::load_from_file(dir.join(format!("{}.kem.pub", prefix)))?;
-        let secret_key = HybridKemSecretKey::load_from_file(dir.join(format!("{}.kem.key", prefix)))?;
+        let public_key =
+            HybridKemPublicKey::load_from_file(dir.join(format!("{}.kem.pub", prefix)))?;
+        let secret_key =
+            HybridKemSecretKey::load_from_file(dir.join(format!("{}.kem.key", prefix)))?;
         Ok(Self {
             public_key,
             secret_key,
@@ -411,9 +420,7 @@ impl HybridKemKeyPair {
 
 /// Encapsulates a hybrid shared secret using peer's ML-KEM-768 and X25519 public keys.
 /// Returns the composite ciphertext and a 32-byte master shared secret derived via HKDF-SHA256.
-pub fn encapsulate_hybrid(
-    peer_pk: &HybridKemPublicKey,
-) -> (HybridKemCiphertext, [u8; 32]) {
+pub fn encapsulate_hybrid(peer_pk: &HybridKemPublicKey) -> (HybridKemCiphertext, [u8; 32]) {
     let ephemeral_sk = EphemeralSecret::random_from_rng(OsRng);
     let ephemeral_pk = X25519PublicKey::from(&ephemeral_sk);
 
@@ -434,10 +441,7 @@ pub fn encapsulate_hybrid(
 
 /// Decapsulates a composite ciphertext using the recipient's ML-KEM-768 and X25519 secret keys.
 /// Returns the matching 32-byte master shared secret.
-pub fn decapsulate_hybrid(
-    ciphertext: &HybridKemCiphertext,
-    sk: &HybridKemSecretKey,
-) -> [u8; 32] {
+pub fn decapsulate_hybrid(ciphertext: &HybridKemCiphertext, sk: &HybridKemSecretKey) -> [u8; 32] {
     let static_sk = StaticSecret::from(sk.x25519_sk);
     let ephemeral_pk = X25519PublicKey::from(ciphertext.x25519_ephemeral_pk);
     let classical_ss = static_sk.diffie_hellman(&ephemeral_pk);
@@ -446,7 +450,6 @@ pub fn decapsulate_hybrid(
 
     derive_hybrid_shared_secret(classical_ss.as_bytes(), kyber_ss.as_bytes())
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -482,7 +485,10 @@ mod tests {
     fn test_kem_public_key_accessors() {
         let pair = HybridKemKeyPair::generate();
         assert_eq!(pair.public_key.x25519_pk(), &pair.public_key.x25519_pk);
-        assert_eq!(pair.public_key.kyber_pk().as_bytes(), pair.public_key.kyber_pk.as_bytes());
+        assert_eq!(
+            pair.public_key.kyber_pk().as_bytes(),
+            pair.public_key.kyber_pk.as_bytes()
+        );
     }
 
     #[test]
@@ -496,7 +502,10 @@ mod tests {
     #[test]
     fn test_kem_encoded_lengths() {
         let pair = HybridKemKeyPair::generate();
-        assert_eq!(pair.public_key.encoded_len(), pair.public_key.to_bytes().len());
+        assert_eq!(
+            pair.public_key.encoded_len(),
+            pair.public_key.to_bytes().len()
+        );
 
         let (ct, _) = encapsulate_hybrid(&pair.public_key);
         assert_eq!(ct.encoded_len(), ct.to_bytes().len());
@@ -511,7 +520,8 @@ mod tests {
 
         let (ct, _) = encapsulate_hybrid(&pair.public_key);
         let ct_bytes = ct.to_bytes();
-        let decoded_ct: HybridKemCiphertext = ct_bytes.as_slice().try_into().expect("TryFrom ct failed");
+        let decoded_ct: HybridKemCiphertext =
+            ct_bytes.as_slice().try_into().expect("TryFrom ct failed");
         assert_eq!(decoded_ct, ct);
     }
 
@@ -519,7 +529,10 @@ mod tests {
     fn test_kem_secret_key_accessors() {
         let pair = HybridKemKeyPair::generate();
         assert_eq!(pair.secret_key.x25519_sk(), &pair.secret_key.x25519_sk);
-        assert_eq!(pair.secret_key.kyber_sk().as_bytes(), pair.secret_key.kyber_sk.as_bytes());
+        assert_eq!(
+            pair.secret_key.kyber_sk().as_bytes(),
+            pair.secret_key.kyber_sk.as_bytes()
+        );
     }
 
     #[test]
@@ -545,7 +558,10 @@ mod tests {
     fn test_kem_keypair_and_parts() {
         let pair = HybridKemKeyPair::generate();
         assert_eq!(pair.public_key().x25519_pk(), pair.public_key.x25519_pk());
-        assert_eq!(pair.public_key().kyber_pk_bytes(), pair.public_key.kyber_pk.as_bytes());
+        assert_eq!(
+            pair.public_key().kyber_pk_bytes(),
+            pair.public_key.kyber_pk.as_bytes()
+        );
         assert_eq!(pair.secret_key().x25519_sk(), pair.secret_key.x25519_sk());
 
         let (ct, _) = encapsulate_hybrid(pair.public_key());
@@ -636,8 +652,10 @@ mod tests {
         let temp_dir = std::env::temp_dir().join(format!("pqc_kem_test_{}", rand::random::<u64>()));
         let pair = HybridKemKeyPair::generate();
 
-        pair.save_to_dir(&temp_dir, "test_kem").expect("save_to_dir failed");
-        let loaded = HybridKemKeyPair::load_from_dir(&temp_dir, "test_kem").expect("load_from_dir failed");
+        pair.save_to_dir(&temp_dir, "test_kem")
+            .expect("save_to_dir failed");
+        let loaded =
+            HybridKemKeyPair::load_from_dir(&temp_dir, "test_kem").expect("load_from_dir failed");
 
         assert_eq!(pair.public_key().to_bytes(), loaded.public_key().to_bytes());
         assert_eq!(pair.secret_key().to_bytes(), loaded.secret_key().to_bytes());
@@ -645,7 +663,3 @@ mod tests {
         let _ = std::fs::remove_dir_all(&temp_dir);
     }
 }
-
-
-
-

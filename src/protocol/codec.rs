@@ -1,6 +1,6 @@
-use std::fmt;
-use bytes::{Buf, BytesMut};
 use crate::protocol::{PacketFrame, PacketHeader, HEADER_SIZE, MAX_FRAME_SIZE};
+use bytes::{Buf, BytesMut};
+use std::fmt;
 
 #[derive(Debug, Clone)]
 pub struct FrameDecoder {
@@ -261,7 +261,10 @@ mod tests {
         let wire_bytes = frame.encode();
 
         decoder.feed(&wire_bytes);
-        let decoded = decoder.decode_frame().expect("decoding failed").expect("frame missing");
+        let decoded = decoder
+            .decode_frame()
+            .expect("decoding failed")
+            .expect("frame missing");
         assert_eq!(frame, decoded);
         assert!(decoder.is_empty());
     }
@@ -280,7 +283,10 @@ mod tests {
             }
         }
 
-        let decoded = decoder.decode_frame().unwrap().expect("frame should be ready");
+        let decoded = decoder
+            .decode_frame()
+            .unwrap()
+            .expect("frame should be ready");
         assert_eq!(frame, decoded);
     }
 
@@ -396,7 +402,9 @@ mod tests {
         let frame = PacketFrame::new(PacketType::Ping, 101, b"pingdata".to_vec()).unwrap();
         decoder.feed_frame(&frame);
 
-        let header = decoder.peek_header().expect("peek_header should return header");
+        let header = decoder
+            .peek_header()
+            .expect("peek_header should return header");
         assert_eq!(header.packet_type, PacketType::Ping);
         assert_eq!(header.seq, 101);
         assert_eq!(header.payload_len, 8);
@@ -404,7 +412,10 @@ mod tests {
 
         // Ensure peeking didn't consume any data
         assert_eq!(decoder.buffer_len(), frame.total_len());
-        let decoded = decoder.decode_frame().unwrap().expect("should still decode");
+        let decoded = decoder
+            .decode_frame()
+            .unwrap()
+            .expect("should still decode");
         assert_eq!(decoded, frame);
         assert!(decoder.is_empty());
     }

@@ -1,6 +1,6 @@
 use ed25519_dalek::{
-    Signature as Ed25519Signature, Signer, SigningKey as Ed25519SigningKey,
-    Verifier, VerifyingKey as Ed25519VerifyingKey,
+    Signature as Ed25519Signature, Signer, SigningKey as Ed25519SigningKey, Verifier,
+    VerifyingKey as Ed25519VerifyingKey,
 };
 use pqcrypto_dilithium::dilithium3::{
     detached_sign, keypair, verify_detached_signature, DetachedSignature as DilithiumSignature,
@@ -22,7 +22,8 @@ pub struct HybridSigPublicKey {
 
 impl PartialEq for HybridSigPublicKey {
     fn eq(&self, other: &Self) -> bool {
-        self.ed25519_pk == other.ed25519_pk && self.dilithium_pk.as_bytes() == other.dilithium_pk.as_bytes()
+        self.ed25519_pk == other.ed25519_pk
+            && self.dilithium_pk.as_bytes() == other.dilithium_pk.as_bytes()
     }
 }
 
@@ -82,7 +83,10 @@ impl HybridSigPublicKey {
 
     /// Returns the hex string representation of the Ed25519 public key.
     pub fn ed25519_pk_hex(&self) -> String {
-        self.ed25519_pk.iter().map(|b| format!("{:02x}", b)).collect()
+        self.ed25519_pk
+            .iter()
+            .map(|b| format!("{:02x}", b))
+            .collect()
     }
 
     /// Returns an 8-hex-character SHA-256 fingerprint of the serialized hybrid public key.
@@ -90,8 +94,6 @@ impl HybridSigPublicKey {
         let digest = Sha256::digest(self.to_bytes());
         digest[..4].iter().map(|b| format!("{:02x}", b)).collect()
     }
-
-
 
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
         if bytes.len() < ED25519_PUBLIC_KEY_SIZE {
@@ -116,7 +118,8 @@ impl HybridSigPublicKey {
 
     /// Loads and deserializes a public key from disk.
     pub fn load_from_file(path: impl AsRef<std::path::Path>) -> Result<Self, String> {
-        let bytes = std::fs::read(path).map_err(|e| format!("Failed to read signature public key file: {}", e))?;
+        let bytes = std::fs::read(path)
+            .map_err(|e| format!("Failed to read signature public key file: {}", e))?;
         Self::from_bytes(&bytes)
     }
 }
@@ -201,7 +204,8 @@ impl HybridSigSecretKey {
 
     /// Loads and deserializes a secret key from disk.
     pub fn load_from_file(path: impl AsRef<std::path::Path>) -> Result<Self, String> {
-        let bytes = std::fs::read(path).map_err(|e| format!("Failed to read signature secret key file: {}", e))?;
+        let bytes = std::fs::read(path)
+            .map_err(|e| format!("Failed to read signature secret key file: {}", e))?;
         Self::from_bytes(&bytes)
     }
 }
@@ -270,9 +274,6 @@ impl std::fmt::Display for HybridSignature {
     }
 }
 
-
-
-
 impl HybridSignature {
     pub fn ed25519_sig(&self) -> &[u8; ED25519_SIGNATURE_SIZE] {
         &self.ed25519_sig
@@ -307,7 +308,10 @@ impl HybridSignature {
 
     /// Returns the hex string representation of the Ed25519 signature.
     pub fn ed25519_sig_hex(&self) -> String {
-        self.ed25519_sig.iter().map(|b| format!("{:02x}", b)).collect()
+        self.ed25519_sig
+            .iter()
+            .map(|b| format!("{:02x}", b))
+            .collect()
     }
 
     /// Returns an 8-hex-character SHA-256 fingerprint of the serialized hybrid signature.
@@ -315,8 +319,6 @@ impl HybridSignature {
         let digest = Sha256::digest(self.to_bytes());
         digest[..4].iter().map(|b| format!("{:02x}", b)).collect()
     }
-
-
 
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
         if bytes.len() < ED25519_SIGNATURE_SIZE {
@@ -393,19 +395,27 @@ impl HybridSigKeyPair {
     }
 
     /// Saves both public and secret keys to the specified directory with given prefix.
-    pub fn save_to_dir(&self, dir: impl AsRef<std::path::Path>, prefix: &str) -> Result<(), std::io::Error> {
+    pub fn save_to_dir(
+        &self,
+        dir: impl AsRef<std::path::Path>,
+        prefix: &str,
+    ) -> Result<(), std::io::Error> {
         let dir = dir.as_ref();
         std::fs::create_dir_all(dir)?;
-        self.public_key.save_to_file(dir.join(format!("{}.sig.pub", prefix)))?;
-        self.secret_key.save_to_file(dir.join(format!("{}.sig.key", prefix)))?;
+        self.public_key
+            .save_to_file(dir.join(format!("{}.sig.pub", prefix)))?;
+        self.secret_key
+            .save_to_file(dir.join(format!("{}.sig.key", prefix)))?;
         Ok(())
     }
 
     /// Loads both public and secret keys from the specified directory with given prefix.
     pub fn load_from_dir(dir: impl AsRef<std::path::Path>, prefix: &str) -> Result<Self, String> {
         let dir = dir.as_ref();
-        let public_key = HybridSigPublicKey::load_from_file(dir.join(format!("{}.sig.pub", prefix)))?;
-        let secret_key = HybridSigSecretKey::load_from_file(dir.join(format!("{}.sig.key", prefix)))?;
+        let public_key =
+            HybridSigPublicKey::load_from_file(dir.join(format!("{}.sig.pub", prefix)))?;
+        let secret_key =
+            HybridSigSecretKey::load_from_file(dir.join(format!("{}.sig.key", prefix)))?;
         Ok(Self {
             public_key,
             secret_key,
@@ -427,11 +437,7 @@ pub fn sign_hybrid(message: &[u8], sk: &HybridSigSecretKey) -> HybridSignature {
 }
 
 /// Verifies that both the Ed25519 and ML-DSA-65 signatures are valid for the given message.
-pub fn verify_hybrid(
-    message: &[u8],
-    signature: &HybridSignature,
-    pk: &HybridSigPublicKey,
-) -> bool {
+pub fn verify_hybrid(message: &[u8], signature: &HybridSignature, pk: &HybridSigPublicKey) -> bool {
     let Ok(ed_verifying_key) = Ed25519VerifyingKey::from_bytes(&pk.ed25519_pk) else {
         return false;
     };
@@ -443,7 +449,6 @@ pub fn verify_hybrid(
 
     verify_detached_signature(&signature.dilithium_sig, message, &pk.dilithium_pk).is_ok()
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -483,7 +488,10 @@ mod tests {
     fn test_sig_public_key_accessors() {
         let pair = HybridSigKeyPair::generate();
         assert_eq!(pair.public_key.ed25519_pk(), &pair.public_key.ed25519_pk);
-        assert_eq!(pair.public_key.dilithium_pk().as_bytes(), pair.public_key.dilithium_pk.as_bytes());
+        assert_eq!(
+            pair.public_key.dilithium_pk().as_bytes(),
+            pair.public_key.dilithium_pk.as_bytes()
+        );
     }
 
     #[test]
@@ -497,7 +505,10 @@ mod tests {
     #[test]
     fn test_sig_encoded_lengths() {
         let pair = HybridSigKeyPair::generate();
-        assert_eq!(pair.public_key.encoded_len(), pair.public_key.to_bytes().len());
+        assert_eq!(
+            pair.public_key.encoded_len(),
+            pair.public_key.to_bytes().len()
+        );
 
         let sig = sign_hybrid(b"message", &pair.secret_key);
         assert_eq!(sig.encoded_len(), sig.to_bytes().len());
@@ -512,7 +523,8 @@ mod tests {
 
         let sig = sign_hybrid(b"try-from-signature-test", &pair.secret_key);
         let sig_bytes = sig.to_bytes();
-        let decoded_sig: HybridSignature = sig_bytes.as_slice().try_into().expect("TryFrom sig failed");
+        let decoded_sig: HybridSignature =
+            sig_bytes.as_slice().try_into().expect("TryFrom sig failed");
         assert_eq!(decoded_sig, sig);
     }
 
@@ -520,7 +532,10 @@ mod tests {
     fn test_sig_secret_key_accessors() {
         let pair = HybridSigKeyPair::generate();
         assert_eq!(pair.secret_key.ed25519_sk(), &pair.secret_key.ed25519_sk);
-        assert_eq!(pair.secret_key.dilithium_sk().as_bytes(), pair.secret_key.dilithium_sk.as_bytes());
+        assert_eq!(
+            pair.secret_key.dilithium_sk().as_bytes(),
+            pair.secret_key.dilithium_sk.as_bytes()
+        );
     }
 
     #[test]
@@ -546,7 +561,10 @@ mod tests {
     fn test_sig_keypair_and_parts() {
         let pair = HybridSigKeyPair::generate();
         assert_eq!(pair.public_key().ed25519_pk(), pair.public_key.ed25519_pk());
-        assert_eq!(pair.public_key().dilithium_pk_bytes(), pair.public_key.dilithium_pk.as_bytes());
+        assert_eq!(
+            pair.public_key().dilithium_pk_bytes(),
+            pair.public_key.dilithium_pk.as_bytes()
+        );
         assert_eq!(pair.secret_key().ed25519_sk(), pair.secret_key.ed25519_sk());
 
         let sig = sign_hybrid(b"test-parts-payload", pair.secret_key());
@@ -572,7 +590,10 @@ mod tests {
 
         let (ed_pk, dilithium_pk) = pair.public_key().as_parts();
         assert_eq!(ed_pk, pair.public_key().ed25519_pk());
-        assert_eq!(dilithium_pk.as_bytes(), pair.public_key().dilithium_pk_bytes());
+        assert_eq!(
+            dilithium_pk.as_bytes(),
+            pair.public_key().dilithium_pk_bytes()
+        );
 
         let sig = sign_hybrid(b"test-as-parts-sig", pair.secret_key());
         let (ed_sig, dilithium_sig) = sig.as_parts();
@@ -614,7 +635,10 @@ mod tests {
 
         let sig = sign_hybrid(b"display-test-msg", pair.secret_key());
         let sig_display = format!("{}", sig);
-        let expected_sig_str = format!("HybridSignature(ed25519=64B, dilithium={}B)", sig.dilithium_sig_bytes().len());
+        let expected_sig_str = format!(
+            "HybridSignature(ed25519=64B, dilithium={}B)",
+            sig.dilithium_sig_bytes().len()
+        );
         assert_eq!(sig_display, expected_sig_str);
     }
 
@@ -638,8 +662,10 @@ mod tests {
         let temp_dir = std::env::temp_dir().join(format!("pqc_sig_test_{}", rand::random::<u64>()));
         let pair = HybridSigKeyPair::generate();
 
-        pair.save_to_dir(&temp_dir, "test_sig").expect("save_to_dir failed");
-        let loaded = HybridSigKeyPair::load_from_dir(&temp_dir, "test_sig").expect("load_from_dir failed");
+        pair.save_to_dir(&temp_dir, "test_sig")
+            .expect("save_to_dir failed");
+        let loaded =
+            HybridSigKeyPair::load_from_dir(&temp_dir, "test_sig").expect("load_from_dir failed");
 
         assert_eq!(pair.public_key().to_bytes(), loaded.public_key().to_bytes());
         assert_eq!(pair.secret_key().to_bytes(), loaded.secret_key().to_bytes());
@@ -647,7 +673,3 @@ mod tests {
         let _ = std::fs::remove_dir_all(&temp_dir);
     }
 }
-
-
-
-

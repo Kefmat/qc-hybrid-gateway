@@ -332,7 +332,9 @@ impl SessionMetrics {
 
     pub fn average_packet_size(&self) -> Option<usize> {
         let total_pkts = self.total_packets();
-        self.total_bytes().checked_div(total_pkts).map(|avg| avg as usize)
+        self.total_bytes()
+            .checked_div(total_pkts)
+            .map(|avg| avg as usize)
     }
 
     pub fn has_traffic(&self) -> bool {
@@ -533,7 +535,6 @@ impl Session {
         &self.session_id
     }
 
-
     pub fn role(&self) -> SessionRole {
         self.role
     }
@@ -681,7 +682,11 @@ impl Session {
         Ok(())
     }
 
-    pub fn encrypt_packet(&mut self, packet_type: PacketType, plaintext: &[u8]) -> Result<PacketFrame, String> {
+    pub fn encrypt_packet(
+        &mut self,
+        packet_type: PacketType,
+        plaintext: &[u8],
+    ) -> Result<PacketFrame, String> {
         if self.state != SessionState::Established {
             return Err(format!("Cannot encrypt packet in state: {}", self.state));
         }
@@ -747,12 +752,18 @@ impl Session {
 
     pub fn handle_ping(&mut self, frame: &PacketFrame) -> Result<u64, String> {
         if frame.packet_type() != PacketType::Ping {
-            return Err(format!("Expected Ping packet, received: {}", frame.packet_type()));
+            return Err(format!(
+                "Expected Ping packet, received: {}",
+                frame.packet_type()
+            ));
         }
 
         let decrypted = self.decrypt_packet(frame)?;
         if decrypted.len() != 8 {
-            return Err(format!("Invalid ping payload size: {} bytes (expected 8)", decrypted.len()));
+            return Err(format!(
+                "Invalid ping payload size: {} bytes (expected 8)",
+                decrypted.len()
+            ));
         }
 
         Ok(u64::from_be_bytes(decrypted[..8].try_into().unwrap()))
@@ -762,14 +773,24 @@ impl Session {
         self.encrypt_packet(PacketType::Pong, &timestamp.to_be_bytes())
     }
 
-    pub fn handle_pong(&mut self, frame: &PacketFrame, current_timestamp: u64) -> Result<u64, String> {
+    pub fn handle_pong(
+        &mut self,
+        frame: &PacketFrame,
+        current_timestamp: u64,
+    ) -> Result<u64, String> {
         if frame.packet_type() != PacketType::Pong {
-            return Err(format!("Expected Pong packet, received: {}", frame.packet_type()));
+            return Err(format!(
+                "Expected Pong packet, received: {}",
+                frame.packet_type()
+            ));
         }
 
         let decrypted = self.decrypt_packet(frame)?;
         if decrypted.len() != 8 {
-            return Err(format!("Invalid pong payload size: {} bytes (expected 8)", decrypted.len()));
+            return Err(format!(
+                "Invalid pong payload size: {} bytes (expected 8)",
+                decrypted.len()
+            ));
         }
 
         let sent_time = u64::from_be_bytes(decrypted[..8].try_into().unwrap());
@@ -815,7 +836,10 @@ impl Session {
     /// Advances the session keys by one symmetric ratchet step and immediately re-keys
     /// the session ciphers in place, enforcing forward secrecy without asymmetric roundtrips.
     pub fn ratchet_rekey(&mut self, keys: &mut SessionKeys) -> Result<(), String> {
-        if !matches!(self.state, SessionState::Established | SessionState::Rekeying) {
+        if !matches!(
+            self.state,
+            SessionState::Established | SessionState::Rekeying
+        ) {
             return Err(format!("Cannot ratchet rekey in state: {}", self.state));
         }
 
@@ -838,8 +862,15 @@ impl Session {
 
     /// Advances the session keys by one symmetric ratchet step bound with an external salt
     /// and immediately re-keys the session ciphers in place.
-    pub fn ratchet_rekey_with_salt(&mut self, keys: &mut SessionKeys, salt: &[u8]) -> Result<(), String> {
-        if !matches!(self.state, SessionState::Established | SessionState::Rekeying) {
+    pub fn ratchet_rekey_with_salt(
+        &mut self,
+        keys: &mut SessionKeys,
+        salt: &[u8],
+    ) -> Result<(), String> {
+        if !matches!(
+            self.state,
+            SessionState::Established | SessionState::Rekeying
+        ) {
             return Err(format!("Cannot ratchet rekey in state: {}", self.state));
         }
 
@@ -930,7 +961,6 @@ impl fmt::Display for Session {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1012,15 +1042,36 @@ mod tests {
         assert!(session.is_closed());
 
         // FromStr parsing
-        assert_eq!("Client".parse::<SessionRole>().unwrap(), SessionRole::Client);
-        assert_eq!("Server".parse::<SessionRole>().unwrap(), SessionRole::Server);
+        assert_eq!(
+            "Client".parse::<SessionRole>().unwrap(),
+            SessionRole::Client
+        );
+        assert_eq!(
+            "Server".parse::<SessionRole>().unwrap(),
+            SessionRole::Server
+        );
         assert!("InvalidRole".parse::<SessionRole>().is_err());
 
-        assert_eq!("Uninitialized".parse::<SessionState>().unwrap(), SessionState::Uninitialized);
-        assert_eq!("Handshaking".parse::<SessionState>().unwrap(), SessionState::Handshaking);
-        assert_eq!("Established".parse::<SessionState>().unwrap(), SessionState::Established);
-        assert_eq!("Rekeying".parse::<SessionState>().unwrap(), SessionState::Rekeying);
-        assert_eq!("Closed".parse::<SessionState>().unwrap(), SessionState::Closed);
+        assert_eq!(
+            "Uninitialized".parse::<SessionState>().unwrap(),
+            SessionState::Uninitialized
+        );
+        assert_eq!(
+            "Handshaking".parse::<SessionState>().unwrap(),
+            SessionState::Handshaking
+        );
+        assert_eq!(
+            "Established".parse::<SessionState>().unwrap(),
+            SessionState::Established
+        );
+        assert_eq!(
+            "Rekeying".parse::<SessionState>().unwrap(),
+            SessionState::Rekeying
+        );
+        assert_eq!(
+            "Closed".parse::<SessionState>().unwrap(),
+            SessionState::Closed
+        );
         assert!("InvalidState".parse::<SessionState>().is_err());
     }
 
@@ -1217,7 +1268,9 @@ mod tests {
         client.establish(&keys).unwrap();
         server.establish(&keys).unwrap();
 
-        let data_frame = client.encrypt_packet(PacketType::Data, b"not-a-pong").unwrap();
+        let data_frame = client
+            .encrypt_packet(PacketType::Data, b"not-a-pong")
+            .unwrap();
         assert!(server.handle_pong(&data_frame, 100).is_err());
 
         let bad_pong_frame = client.encrypt_packet(PacketType::Pong, b"short").unwrap();
@@ -1233,7 +1286,9 @@ mod tests {
         server.establish(&keys).unwrap();
 
         // Data frame passed to handle_ping fails
-        let data_frame = client.encrypt_packet(PacketType::Data, b"not-a-ping").unwrap();
+        let data_frame = client
+            .encrypt_packet(PacketType::Data, b"not-a-ping")
+            .unwrap();
         assert!(server.handle_ping(&data_frame).is_err());
 
         // Ping frame with invalid length fails
@@ -1306,7 +1361,9 @@ mod tests {
         assert_eq!(server.rx_seen_count(), 0);
         assert_eq!(server.rx_filter().window_size(), DEFAULT_REPLAY_WINDOW_SIZE);
 
-        let frame = client.encrypt_packet(PacketType::Data, b"test-payload").unwrap();
+        let frame = client
+            .encrypt_packet(PacketType::Data, b"test-payload")
+            .unwrap();
         server.decrypt_packet(&frame).unwrap();
 
         assert_eq!(server.rx_seen_count(), 1);
@@ -1532,7 +1589,9 @@ mod tests {
         server.establish(&server_keys).unwrap();
 
         // Send packet under generation 0
-        let frame0 = client.encrypt_packet(PacketType::Data, b"pre-ratchet-secret").unwrap();
+        let frame0 = client
+            .encrypt_packet(PacketType::Data, b"pre-ratchet-secret")
+            .unwrap();
         let decrypted0 = server.decrypt_packet(&frame0).unwrap();
         assert_eq!(decrypted0, b"pre-ratchet-secret");
 
@@ -1547,7 +1606,9 @@ mod tests {
         assert_eq!(server.metrics().rekeys_completed, 1);
 
         // Send packet under generation 1
-        let frame1 = client.encrypt_packet(PacketType::Data, b"post-ratchet-secret").unwrap();
+        let frame1 = client
+            .encrypt_packet(PacketType::Data, b"post-ratchet-secret")
+            .unwrap();
         let decrypted1 = server.decrypt_packet(&frame1).unwrap();
         assert_eq!(decrypted1, b"post-ratchet-secret");
 
@@ -1567,10 +1628,16 @@ mod tests {
         server.establish(&server_keys).unwrap();
 
         let salt = b"custom-session-salt-v1";
-        client.ratchet_rekey_with_salt(&mut client_keys, salt).unwrap();
-        server.ratchet_rekey_with_salt(&mut server_keys, salt).unwrap();
+        client
+            .ratchet_rekey_with_salt(&mut client_keys, salt)
+            .unwrap();
+        server
+            .ratchet_rekey_with_salt(&mut server_keys, salt)
+            .unwrap();
 
-        let frame = client.encrypt_packet(PacketType::Data, b"salted-ratchet-message").unwrap();
+        let frame = client
+            .encrypt_packet(PacketType::Data, b"salted-ratchet-message")
+            .unwrap();
         let decrypted = server.decrypt_packet(&frame).unwrap();
         assert_eq!(decrypted, b"salted-ratchet-message");
     }
@@ -1585,7 +1652,9 @@ mod tests {
         closed_session.establish(&keys).unwrap();
         closed_session.close();
         assert!(closed_session.ratchet_rekey(&mut keys).is_err());
-        assert!(closed_session.ratchet_rekey_with_salt(&mut keys, b"salt").is_err());
+        assert!(closed_session
+            .ratchet_rekey_with_salt(&mut keys, b"salt")
+            .is_err());
     }
 
     #[test]
@@ -1662,7 +1731,10 @@ mod tests {
 
     #[test]
     fn test_session_variants_metrics_and_rekey_checks() {
-        assert_eq!(SessionRole::all(), &[SessionRole::Client, SessionRole::Server]);
+        assert_eq!(
+            SessionRole::all(),
+            &[SessionRole::Client, SessionRole::Server]
+        );
         assert_eq!(
             SessionState::all(),
             &[
@@ -1706,8 +1778,3 @@ mod tests {
         assert!(session.rekey_threshold_reached());
     }
 }
-
-
-
-
-

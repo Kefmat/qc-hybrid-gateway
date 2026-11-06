@@ -107,11 +107,13 @@ impl AeadCipher {
         Ok(())
     }
 
-
-
-
     /// Encrypts plaintext with associated data (AAD) using sequence counter based nonce.
-    pub fn encrypt(&self, nonce_counter: u64, aad: &[u8], plaintext: &[u8]) -> Result<Vec<u8>, String> {
+    pub fn encrypt(
+        &self,
+        nonce_counter: u64,
+        aad: &[u8],
+        plaintext: &[u8],
+    ) -> Result<Vec<u8>, String> {
         let nonce_bytes = format_nonce(nonce_counter);
         let nonce = Nonce::from_slice(&nonce_bytes);
 
@@ -126,7 +128,12 @@ impl AeadCipher {
     }
 
     /// Decrypts ciphertext and verifies authentication tag with associated data (AAD).
-    pub fn decrypt(&self, nonce_counter: u64, aad: &[u8], ciphertext: &[u8]) -> Result<Vec<u8>, String> {
+    pub fn decrypt(
+        &self,
+        nonce_counter: u64,
+        aad: &[u8],
+        ciphertext: &[u8],
+    ) -> Result<Vec<u8>, String> {
         let nonce_bytes = format_nonce(nonce_counter);
         let nonce = Nonce::from_slice(&nonce_bytes);
 
@@ -235,10 +242,14 @@ mod tests {
     fn test_encrypt_decrypt_empty_payload() {
         let key = [0x42u8; 32];
         let cipher = AeadCipher::new(&key);
-        let encrypted = cipher.encrypt(1, b"header", b"").expect("encryption failed");
+        let encrypted = cipher
+            .encrypt(1, b"header", b"")
+            .expect("encryption failed");
         assert_eq!(encrypted.len(), TAG_SIZE);
 
-        let decrypted = cipher.decrypt(1, b"header", &encrypted).expect("decryption failed");
+        let decrypted = cipher
+            .decrypt(1, b"header", &encrypted)
+            .expect("decryption failed");
         assert!(decrypted.is_empty());
     }
 
@@ -256,7 +267,9 @@ mod tests {
     fn test_ciphertext_truncation_fails_decryption() {
         let key = [0x77u8; 32];
         let cipher = AeadCipher::new(&key);
-        let encrypted = cipher.encrypt(5, b"aad", b"secret message payload").unwrap();
+        let encrypted = cipher
+            .encrypt(5, b"aad", b"secret message payload")
+            .unwrap();
 
         let truncated = &encrypted[..encrypted.len() - 1];
         assert!(cipher.decrypt(5, b"aad", truncated).is_err());
@@ -364,7 +377,9 @@ mod tests {
     fn test_aead_corrupted_tag_fails() {
         let key = [0x88u8; KEY_SIZE];
         let cipher = AeadCipher::new(&key);
-        let mut ct = cipher.encrypt(42, b"associated-data", b"payload to protect").unwrap();
+        let mut ct = cipher
+            .encrypt(42, b"associated-data", b"payload to protect")
+            .unwrap();
 
         // Mutate the final tag byte
         let last_idx = ct.len() - 1;
@@ -410,18 +425,18 @@ mod tests {
         let aad = b"header-aad";
         let mut out_buffer = Vec::from(b"PREFIX-".as_slice());
 
-        let written = cipher.encrypt_into(1, aad, plaintext, &mut out_buffer).unwrap();
+        let written = cipher
+            .encrypt_into(1, aad, plaintext, &mut out_buffer)
+            .unwrap();
         assert_eq!(written, plaintext.len() + TAG_SIZE);
         assert_eq!(out_buffer.len(), 7 + written);
 
         let ciphertext = &out_buffer[7..];
         let mut decrypted_buffer = Vec::new();
-        let decrypted_len = cipher.decrypt_into(1, aad, ciphertext, &mut decrypted_buffer).unwrap();
+        let decrypted_len = cipher
+            .decrypt_into(1, aad, ciphertext, &mut decrypted_buffer)
+            .unwrap();
         assert_eq!(decrypted_len, plaintext.len());
         assert_eq!(decrypted_buffer.as_slice(), plaintext);
     }
 }
-
-
-
-

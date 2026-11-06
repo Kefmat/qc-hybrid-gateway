@@ -53,11 +53,23 @@ impl HandshakeInit {
         verify_hybrid(&self.signed_payload(), &self.signature, signer_pk)
     }
 
-    pub fn into_parts(self) -> (HybridKemPublicKey, [u8; HANDSHAKE_NONCE_SIZE], HybridSignature) {
+    pub fn into_parts(
+        self,
+    ) -> (
+        HybridKemPublicKey,
+        [u8; HANDSHAKE_NONCE_SIZE],
+        HybridSignature,
+    ) {
         (self.ephemeral_pk, self.nonce, self.signature)
     }
 
-    pub fn as_parts(&self) -> (&HybridKemPublicKey, &[u8; HANDSHAKE_NONCE_SIZE], &HybridSignature) {
+    pub fn as_parts(
+        &self,
+    ) -> (
+        &HybridKemPublicKey,
+        &[u8; HANDSHAKE_NONCE_SIZE],
+        &HybridSignature,
+    ) {
         (&self.ephemeral_pk, &self.nonce, &self.signature)
     }
 
@@ -126,7 +138,10 @@ impl HandshakeInit {
     }
 
     pub fn encoded_len(&self) -> usize {
-        4 + self.ephemeral_pk.encoded_len() + HANDSHAKE_NONCE_SIZE + 4 + self.signature.encoded_len()
+        4 + self.ephemeral_pk.encoded_len()
+            + HANDSHAKE_NONCE_SIZE
+            + 4
+            + self.signature.encoded_len()
     }
 
     pub fn to_bytes(&self) -> Vec<u8> {
@@ -269,11 +284,23 @@ impl HandshakeResponse {
         verify_hybrid(&self.signed_payload(), &self.signature, signer_pk)
     }
 
-    pub fn into_parts(self) -> (HybridKemCiphertext, [u8; HANDSHAKE_NONCE_SIZE], HybridSignature) {
+    pub fn into_parts(
+        self,
+    ) -> (
+        HybridKemCiphertext,
+        [u8; HANDSHAKE_NONCE_SIZE],
+        HybridSignature,
+    ) {
         (self.ciphertext, self.nonce, self.signature)
     }
 
-    pub fn as_parts(&self) -> (&HybridKemCiphertext, &[u8; HANDSHAKE_NONCE_SIZE], &HybridSignature) {
+    pub fn as_parts(
+        &self,
+    ) -> (
+        &HybridKemCiphertext,
+        &[u8; HANDSHAKE_NONCE_SIZE],
+        &HybridSignature,
+    ) {
         (&self.ciphertext, &self.nonce, &self.signature)
     }
 
@@ -482,7 +509,8 @@ mod tests {
         let encoded = resp.to_bytes();
         assert_eq!(encoded.len(), resp.encoded_len());
 
-        let decoded = HandshakeResponse::from_bytes(&encoded).expect("failed to decode HandshakeResponse");
+        let decoded =
+            HandshakeResponse::from_bytes(&encoded).expect("failed to decode HandshakeResponse");
         assert_eq!(resp, decoded);
         assert!(decoded.verify(&sig_keys.public_key));
 
@@ -506,7 +534,10 @@ mod tests {
 
         let init = HandshakeInit::create(kem_keys.public_key.clone(), nonce, &sig_keys.secret_key);
         let init_bytes = init.to_bytes();
-        let decoded_init: HandshakeInit = init_bytes.as_slice().try_into().expect("TryFrom HandshakeInit failed");
+        let decoded_init: HandshakeInit = init_bytes
+            .as_slice()
+            .try_into()
+            .expect("TryFrom HandshakeInit failed");
         assert_eq!(init, decoded_init);
         let init_ref_vec: Vec<u8> = (&init).into();
         assert_eq!(init_ref_vec, init_bytes);
@@ -516,7 +547,10 @@ mod tests {
         let (ct, _) = encapsulate_hybrid(&kem_keys.public_key);
         let resp = HandshakeResponse::create(ct, nonce, &sig_keys.secret_key);
         let resp_bytes = resp.to_bytes();
-        let decoded_resp: HandshakeResponse = resp_bytes.as_slice().try_into().expect("TryFrom HandshakeResponse failed");
+        let decoded_resp: HandshakeResponse = resp_bytes
+            .as_slice()
+            .try_into()
+            .expect("TryFrom HandshakeResponse failed");
         assert_eq!(resp, decoded_resp);
         let resp_ref_vec: Vec<u8> = (&resp).into();
         assert_eq!(resp_ref_vec, resp_bytes);
@@ -588,12 +622,18 @@ mod tests {
 
         let init = HandshakeInit::create(kem_keys.public_key.clone(), nonce, &sig_keys.secret_key);
         let payload = init.signed_payload();
-        assert_eq!(payload.len(), kem_keys.public_key.to_bytes().len() + HANDSHAKE_NONCE_SIZE);
+        assert_eq!(
+            payload.len(),
+            kem_keys.public_key.to_bytes().len() + HANDSHAKE_NONCE_SIZE
+        );
 
         let (ct, _) = encapsulate_hybrid(&kem_keys.public_key);
         let resp = HandshakeResponse::create(ct.clone(), nonce, &sig_keys.secret_key);
         let resp_payload = resp.signed_payload();
-        assert_eq!(resp_payload.len(), ct.to_bytes().len() + HANDSHAKE_NONCE_SIZE);
+        assert_eq!(
+            resp_payload.len(),
+            ct.to_bytes().len() + HANDSHAKE_NONCE_SIZE
+        );
     }
 
     #[test]
@@ -645,10 +685,13 @@ mod tests {
         let decoded_init = HandshakeInit::from_frame(&frame_init).expect("from_frame failed");
         assert_eq!(decoded_init, init);
 
-        let try_from_ref: HandshakeInit = (&frame_init).try_into().expect("TryFrom &PacketFrame failed");
+        let try_from_ref: HandshakeInit = (&frame_init)
+            .try_into()
+            .expect("TryFrom &PacketFrame failed");
         assert_eq!(try_from_ref, init);
 
-        let try_from_val: HandshakeInit = frame_init.try_into().expect("TryFrom PacketFrame failed");
+        let try_from_val: HandshakeInit =
+            frame_init.try_into().expect("TryFrom PacketFrame failed");
         assert_eq!(try_from_val, init);
 
         // HandshakeResponse framing and nonce checks
@@ -665,10 +708,13 @@ mod tests {
         let decoded_resp = HandshakeResponse::from_frame(&frame_resp).expect("from_frame failed");
         assert_eq!(decoded_resp, resp);
 
-        let try_resp_ref: HandshakeResponse = (&frame_resp).try_into().expect("TryFrom &PacketFrame failed");
+        let try_resp_ref: HandshakeResponse = (&frame_resp)
+            .try_into()
+            .expect("TryFrom &PacketFrame failed");
         assert_eq!(try_resp_ref, resp);
 
-        let try_resp_val: HandshakeResponse = frame_resp.try_into().expect("TryFrom PacketFrame failed");
+        let try_resp_val: HandshakeResponse =
+            frame_resp.try_into().expect("TryFrom PacketFrame failed");
         assert_eq!(try_resp_val, resp);
 
         // Wrong packet type rejection
@@ -677,4 +723,3 @@ mod tests {
         assert!(HandshakeResponse::from_frame(&bad_frame).is_err());
     }
 }
-

@@ -8,9 +8,7 @@ use crate::crypto::{
     kem::{decapsulate_hybrid, encapsulate_hybrid, HybridKemKeyPair},
     sig::{HybridSigKeyPair, HybridSigPublicKey},
 };
-use crate::protocol::{
-    FrameDecoder, HandshakeInit, HandshakeResponse, PacketFrame, PacketType,
-};
+use crate::protocol::{FrameDecoder, HandshakeInit, HandshakeResponse, PacketFrame, PacketType};
 use crate::session::{Session, SessionMetrics};
 
 /// Configuration for network tunnel endpoints.
@@ -102,11 +100,7 @@ impl TunnelServer {
         let mut server_nonce = [0u8; 16];
         rand::RngCore::fill_bytes(&mut rand::rngs::OsRng, &mut server_nonce);
 
-        let resp_msg = HandshakeResponse::create(
-            kem_ct,
-            server_nonce,
-            &self.sig_keys.secret_key,
-        );
+        let resp_msg = HandshakeResponse::create(kem_ct, server_nonce, &self.sig_keys.secret_key);
 
         let resp_frame = resp_msg
             .to_frame(1)
@@ -126,7 +120,10 @@ impl TunnelServer {
             .establish(&session_keys)
             .map_err(|e| format!("Failed to establish server session: {}", e))?;
 
-        info!("Server tunnel session established (id: {})", session.session_id());
+        info!(
+            "Server tunnel session established (id: {})",
+            session.session_id()
+        );
 
         // 4. Data transfer and heartbeat loop
         loop {
@@ -316,7 +313,10 @@ impl TunnelClient {
             .establish(&session_keys)
             .map_err(|e| format!("Failed to establish client session: {}", e))?;
 
-        info!("Client tunnel session established (id: {})", session.session_id());
+        info!(
+            "Client tunnel session established (id: {})",
+            session.session_id()
+        );
 
         Ok(EstablishedClientConnection {
             stream,
@@ -495,12 +495,14 @@ mod tests {
         let client = TunnelClient::new(client_sig, server_sig_pk);
 
         // Spawn server handling stream
-        let server_handle = tokio::spawn(async move {
-            server.handle_stream(server_io, None).await.unwrap()
-        });
+        let server_handle =
+            tokio::spawn(async move { server.handle_stream(server_io, None).await.unwrap() });
 
         // Run client on stream
-        let mut conn = client.connect_stream(client_io).await.expect("Client connect failed");
+        let mut conn = client
+            .connect_stream(client_io)
+            .await
+            .expect("Client connect failed");
 
         // Send data
         let reply = conn.send_data(b"Hello Quantum Gateway").await.unwrap();
@@ -580,11 +582,17 @@ mod tests {
 
         let sig1 = HybridSigKeyPair::generate();
         let sig2 = HybridSigKeyPair::generate();
-        let custom_config = TunnelConfig { rekey_threshold: 42 };
+        let custom_config = TunnelConfig {
+            rekey_threshold: 42,
+        };
         let server = TunnelServer::with_config(sig1, custom_config.clone());
         assert_eq!(server.config.rekey_threshold, 42);
 
-        let client = TunnelClient::with_config(sig2, Some(server.sig_keys.public_key.clone()), custom_config);
+        let client = TunnelClient::with_config(
+            sig2,
+            Some(server.sig_keys.public_key.clone()),
+            custom_config,
+        );
         assert_eq!(client.config.rekey_threshold, 42);
     }
 }

@@ -1,4 +1,4 @@
-pub mod kem;
-pub mod sig;
 pub mod aead;
 pub mod kdf;
+pub mod kem;
+pub mod sig;

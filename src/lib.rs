@@ -8,7 +8,9 @@ pub use crypto::kdf::{
     derive_hybrid_shared_secret, derive_ratchet_step, derive_session_keys, hash_transcript,
     SessionKeys,
 };
-pub use crypto::kem::{HybridKemCiphertext, HybridKemKeyPair, HybridKemPublicKey, HybridKemSecretKey};
+pub use crypto::kem::{
+    HybridKemCiphertext, HybridKemKeyPair, HybridKemPublicKey, HybridKemSecretKey,
+};
 pub use crypto::sig::{HybridSigKeyPair, HybridSigPublicKey, HybridSigSecretKey, HybridSignature};
 pub use protocol::{
     AntiReplayFilter, FrameDecoder, HandshakeInit, HandshakeResponse, PacketFrame, PacketHeader,
@@ -38,7 +40,11 @@ mod tests {
         let signature = sign_hybrid(payload, &signer.secret_key);
 
         assert!(verify_hybrid(payload, &signature, &signer.public_key));
-        assert!(!verify_hybrid(b"corrupted-payload", &signature, &signer.public_key));
+        assert!(!verify_hybrid(
+            b"corrupted-payload",
+            &signature,
+            &signer.public_key
+        ));
     }
 
     #[test]
@@ -46,7 +52,6 @@ mod tests {
         let master_secret = [0x77u8; 32];
         let transcript = hash_transcript(&[b"client-handshake-init", b"server-handshake-resp"]);
         let session = derive_session_keys(&master_secret, &transcript);
-
 
         let sender = AeadCipher::new(&session.client_write_key);
         let receiver = AeadCipher::new(&session.client_write_key);
@@ -83,26 +88,39 @@ mod tests {
         // 2. Client initiates handshake (encapsulation)
         let (kem_ct, client_ss) = encapsulate_hybrid(&server_kem.public_key);
         let client_hello_payload = kem_ct.to_bytes();
-        let client_hello_frame = PacketFrame::new(PacketType::HandshakeInit, 1, client_hello_payload.clone()).unwrap();
+        let client_hello_frame =
+            PacketFrame::new(PacketType::HandshakeInit, 1, client_hello_payload.clone()).unwrap();
 
         // 3. Server decapsulates and signs response
         let server_ss = decapsulate_hybrid(&kem_ct, &server_kem.secret_key);
         assert_eq!(client_ss, server_ss);
 
         let server_sig_data = sign_hybrid(&client_hello_payload, &server_sig.secret_key);
-        let server_resp_frame = PacketFrame::new(PacketType::HandshakeResp, 1, server_sig_data.to_bytes()).unwrap();
+        let server_resp_frame =
+            PacketFrame::new(PacketType::HandshakeResp, 1, server_sig_data.to_bytes()).unwrap();
 
         // 4. Client verifies server identity
         let decoded_sig = HybridSignature::from_bytes(&server_resp_frame.payload).unwrap();
-        assert!(verify_hybrid(&client_hello_payload, &decoded_sig, &server_sig.public_key));
+        assert!(verify_hybrid(
+            &client_hello_payload,
+            &decoded_sig,
+            &server_sig.public_key
+        ));
 
         // 5. Both derive matching session keys bound to transcript
-        let transcript = hash_transcript(&[&client_hello_frame.encode(), &server_resp_frame.encode()]);
+        let transcript =
+            hash_transcript(&[&client_hello_frame.encode(), &server_resp_frame.encode()]);
         let client_session = derive_session_keys(&client_ss, &transcript);
         let server_session = derive_session_keys(&server_ss, &transcript);
 
-        assert_eq!(client_session.client_write_key(), server_session.client_write_key());
-        assert_eq!(client_session.server_write_key(), server_session.server_write_key());
+        assert_eq!(
+            client_session.client_write_key(),
+            server_session.client_write_key()
+        );
+        assert_eq!(
+            client_session.server_write_key(),
+            server_session.server_write_key()
+        );
 
         // 6. Client encrypts and sends Data packet
         let client_cipher = AeadCipher::new(client_session.client_write_key());
@@ -118,7 +136,9 @@ mod tests {
 
         let decoded_frame = PacketFrame::decode(&data_frame.encode()).unwrap();
         assert!(decoded_frame.is_data());
-        let decrypted = server_rx_cipher.decrypt(decoded_frame.seq(), b"seq=1", &decoded_frame.payload).unwrap();
+        let decrypted = server_rx_cipher
+            .decrypt(decoded_frame.seq(), b"seq=1", &decoded_frame.payload)
+            .unwrap();
         assert_eq!(plaintext.to_vec(), decrypted);
     }
 
@@ -131,17 +151,23 @@ mod tests {
         // 1. Client initiates HandshakeInit
         let client_ephemeral_kem = HybridKemKeyPair::generate();
         let client_nonce = [1u8; 16];
-        let init_msg = HandshakeInit::create(client_ephemeral_kem.public_key, client_nonce, &client_sig.secret_key);
+        let init_msg = HandshakeInit::create(
+            client_ephemeral_kem.public_key,
+            client_nonce,
+            &client_sig.secret_key,
+        );
         assert!(init_msg.verify(&client_sig.public_key));
 
         // 2. Server encapsulates against client's ephemeral KEM key
         let (kem_ct, server_shared_secret) = encapsulate_hybrid(&init_msg.ephemeral_pk);
         let server_nonce = [2u8; 16];
-        let resp_msg = HandshakeResponse::create(kem_ct.clone(), server_nonce, &server_sig.secret_key);
+        let resp_msg =
+            HandshakeResponse::create(kem_ct.clone(), server_nonce, &server_sig.secret_key);
         assert!(resp_msg.verify(&server_sig.public_key));
 
         // 3. Client decapsulates
-        let client_shared_secret = decapsulate_hybrid(&resp_msg.ciphertext, &client_ephemeral_kem.secret_key);
+        let client_shared_secret =
+            decapsulate_hybrid(&resp_msg.ciphertext, &client_ephemeral_kem.secret_key);
         assert_eq!(client_shared_secret, server_shared_secret);
 
         // 4. Derive initial session keys
@@ -159,8 +185,12 @@ mod tests {
         let mut server_decoder = FrameDecoder::new();
         let mut client_decoder = FrameDecoder::new();
 
-        let packet1 = client_session.encrypt_packet(PacketType::Data, b"message-one").unwrap();
-        let packet2 = client_session.encrypt_packet(PacketType::Ping, b"ping").unwrap();
+        let packet1 = client_session
+            .encrypt_packet(PacketType::Data, b"message-one")
+            .unwrap();
+        let packet2 = client_session
+            .encrypt_packet(PacketType::Ping, b"ping")
+            .unwrap();
 
         let mut stream_bytes = packet1.encode();
         stream_bytes.extend_from_slice(&packet2.encode());
@@ -175,7 +205,9 @@ mod tests {
         assert_eq!(pt2, b"ping");
 
         // 7. Server responds to client
-        let server_resp = server_session.encrypt_packet(PacketType::Data, b"response-ack").unwrap();
+        let server_resp = server_session
+            .encrypt_packet(PacketType::Data, b"response-ack")
+            .unwrap();
         client_decoder.feed(&server_resp.encode());
         let rx_resp = client_decoder.decode_frame().unwrap().unwrap();
         let pt_resp = client_session.decrypt_packet(&rx_resp).unwrap();
@@ -192,7 +224,9 @@ mod tests {
         client_session.complete_rekey(&new_client_keys).unwrap();
         server_session.complete_rekey(&new_server_keys).unwrap();
 
-        let post_rekey_pkt = client_session.encrypt_packet(PacketType::Data, b"post-rekey-data").unwrap();
+        let post_rekey_pkt = client_session
+            .encrypt_packet(PacketType::Data, b"post-rekey-data")
+            .unwrap();
         server_decoder.feed(&post_rekey_pkt.encode());
         let rx_post_rekey = server_decoder.decode_frame().unwrap().unwrap();
         let pt_rekey = server_session.decrypt_packet(&rx_post_rekey).unwrap();
@@ -220,7 +254,9 @@ mod tests {
         // Perform 3 consecutive rapid rekeys
         for round in 1..=3 {
             let data_msg = format!("round-{}-data", round);
-            let frame = client.encrypt_packet(PacketType::Data, data_msg.as_bytes()).unwrap();
+            let frame = client
+                .encrypt_packet(PacketType::Data, data_msg.as_bytes())
+                .unwrap();
             let decrypted = server.decrypt_packet(&frame).unwrap();
             assert_eq!(decrypted, data_msg.as_bytes());
 
@@ -270,7 +306,9 @@ mod tests {
         // Perform 4 consecutive ratchet evolutions
         for generation in 1..=4 {
             let message = format!("generation-{}-payload", generation);
-            let frame = client.encrypt_packet(PacketType::Data, message.as_bytes()).unwrap();
+            let frame = client
+                .encrypt_packet(PacketType::Data, message.as_bytes())
+                .unwrap();
             let decrypted = server.decrypt_packet(&frame).unwrap();
             assert_eq!(decrypted, message.as_bytes());
 
@@ -343,7 +381,9 @@ mod tests {
 
         // 4. Test pre-filtering with AntiReplayFilter::would_accept and is_replay
         let mut filter = AntiReplayFilter::new(32);
-        let frame1 = client.encrypt_packet(PacketType::Data, b"stream-msg-1").unwrap();
+        let frame1 = client
+            .encrypt_packet(PacketType::Data, b"stream-msg-1")
+            .unwrap();
         assert!(filter.would_accept(frame1.seq()));
         assert!(!filter.is_replay(frame1.seq()));
         assert!(filter.check_and_update(frame1.seq()));
@@ -357,6 +397,3 @@ mod tests {
         assert!(filter_display.contains("AntiReplayFilter(window=32"));
     }
 }
-
-
-

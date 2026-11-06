@@ -84,7 +84,10 @@ pub enum ProtocolError {
     UnknownPacketType(u8),
 
     #[error("Payload length {payload_len} exceeds maximum frame limit {max_limit}")]
-    FrameTooLarge { payload_len: usize, max_limit: usize },
+    FrameTooLarge {
+        payload_len: usize,
+        max_limit: usize,
+    },
 
     #[error("Payload truncated: header specified {expected} bytes, but buffer has {actual} bytes")]
     PayloadTruncated { expected: usize, actual: usize },
@@ -250,8 +253,14 @@ mod tests {
 
     #[test]
     fn test_protocol_error_formatting() {
-        let err = ProtocolError::BufferTooShort { expected: 14, actual: 5 };
-        assert_eq!(err.to_string(), "Buffer too short: expected at least 14 bytes, received 5 bytes");
+        let err = ProtocolError::BufferTooShort {
+            expected: 14,
+            actual: 5,
+        };
+        assert_eq!(
+            err.to_string(),
+            "Buffer too short: expected at least 14 bytes, received 5 bytes"
+        );
 
         let err = ProtocolError::InvalidVersion(2);
         assert_eq!(err.to_string(), "Unsupported protocol version: 2");
@@ -259,17 +268,35 @@ mod tests {
         let err = ProtocolError::UnknownPacketType(0xFF);
         assert_eq!(err.to_string(), "Unknown packet type identifier: 0xff");
 
-        let err = ProtocolError::FrameTooLarge { payload_len: 70000, max_limit: 65536 };
-        assert_eq!(err.to_string(), "Payload length 70000 exceeds maximum frame limit 65536");
+        let err = ProtocolError::FrameTooLarge {
+            payload_len: 70000,
+            max_limit: 65536,
+        };
+        assert_eq!(
+            err.to_string(),
+            "Payload length 70000 exceeds maximum frame limit 65536"
+        );
 
-        let err = ProtocolError::PayloadTruncated { expected: 100, actual: 50 };
-        assert_eq!(err.to_string(), "Payload truncated: header specified 100 bytes, but buffer has 50 bytes");
+        let err = ProtocolError::PayloadTruncated {
+            expected: 100,
+            actual: 50,
+        };
+        assert_eq!(
+            err.to_string(),
+            "Payload truncated: header specified 100 bytes, but buffer has 50 bytes"
+        );
 
         let err = ProtocolError::ReplayDetected(42);
-        assert_eq!(err.to_string(), "Anti-replay validation failed for sequence 42");
+        assert_eq!(
+            err.to_string(),
+            "Anti-replay validation failed for sequence 42"
+        );
 
         let err = ProtocolError::CryptoError("tag mismatch".to_string());
-        assert_eq!(err.to_string(), "Cryptographic operation failed: tag mismatch");
+        assert_eq!(
+            err.to_string(),
+            "Cryptographic operation failed: tag mismatch"
+        );
 
         let err = ProtocolError::InvalidState("Closed".to_string());
         assert_eq!(err.to_string(), "Invalid session state: Closed");
@@ -277,7 +304,10 @@ mod tests {
 
     #[test]
     fn test_protocol_error_predicates() {
-        let err_buf = ProtocolError::BufferTooShort { expected: 10, actual: 2 };
+        let err_buf = ProtocolError::BufferTooShort {
+            expected: 10,
+            actual: 2,
+        };
         assert!(err_buf.is_framing_error());
         assert!(!err_buf.is_replay());
         assert!(!err_buf.is_crypto_error());
@@ -289,10 +319,16 @@ mod tests {
         let err_type = ProtocolError::UnknownPacketType(0xEE);
         assert!(err_type.is_framing_error());
 
-        let err_large = ProtocolError::FrameTooLarge { payload_len: 100000, max_limit: 65536 };
+        let err_large = ProtocolError::FrameTooLarge {
+            payload_len: 100000,
+            max_limit: 65536,
+        };
         assert!(err_large.is_framing_error());
 
-        let err_trunc = ProtocolError::PayloadTruncated { expected: 50, actual: 10 };
+        let err_trunc = ProtocolError::PayloadTruncated {
+            expected: 50,
+            actual: 10,
+        };
         assert!(err_trunc.is_framing_error());
 
         let err_replay = ProtocolError::ReplayDetected(99);
@@ -395,14 +431,54 @@ mod tests {
         assert!(ErrorKind::all().contains(&ErrorKind::State));
 
         let errs = [
-            (ProtocolError::buffer_too_short(10, 2), "BufferTooShort", 1001, ErrorKind::Framing),
-            (ProtocolError::invalid_version(4), "InvalidVersion", 1002, ErrorKind::Framing),
-            (ProtocolError::unknown_packet_type(0xFF), "UnknownPacketType", 1003, ErrorKind::Framing),
-            (ProtocolError::frame_too_large(100, 50), "FrameTooLarge", 1004, ErrorKind::Framing),
-            (ProtocolError::payload_truncated(50, 10), "PayloadTruncated", 1005, ErrorKind::Framing),
-            (ProtocolError::replay_detected(7), "ReplayDetected", 2001, ErrorKind::Replay),
-            (ProtocolError::crypto_error("fail"), "CryptoError", 3001, ErrorKind::Crypto),
-            (ProtocolError::invalid_state("halt"), "InvalidState", 4001, ErrorKind::State),
+            (
+                ProtocolError::buffer_too_short(10, 2),
+                "BufferTooShort",
+                1001,
+                ErrorKind::Framing,
+            ),
+            (
+                ProtocolError::invalid_version(4),
+                "InvalidVersion",
+                1002,
+                ErrorKind::Framing,
+            ),
+            (
+                ProtocolError::unknown_packet_type(0xFF),
+                "UnknownPacketType",
+                1003,
+                ErrorKind::Framing,
+            ),
+            (
+                ProtocolError::frame_too_large(100, 50),
+                "FrameTooLarge",
+                1004,
+                ErrorKind::Framing,
+            ),
+            (
+                ProtocolError::payload_truncated(50, 10),
+                "PayloadTruncated",
+                1005,
+                ErrorKind::Framing,
+            ),
+            (
+                ProtocolError::replay_detected(7),
+                "ReplayDetected",
+                2001,
+                ErrorKind::Replay,
+            ),
+            (
+                ProtocolError::crypto_error("fail"),
+                "CryptoError",
+                3001,
+                ErrorKind::Crypto,
+            ),
+            (
+                ProtocolError::invalid_state("halt"),
+                "InvalidState",
+                4001,
+                ErrorKind::State,
+            ),
         ];
 
         for (err, expected_name, expected_code, expected_kind) in &errs {
@@ -421,4 +497,3 @@ mod tests {
         }
     }
 }
-

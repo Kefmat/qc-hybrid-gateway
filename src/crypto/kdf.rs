@@ -189,10 +189,18 @@ impl SessionKeys {
 
     pub fn constant_time_eq(&self, other: &Self) -> bool {
         let mut diff = 0u8;
-        for (a, b) in self.client_write_key.iter().zip(other.client_write_key.iter()) {
+        for (a, b) in self
+            .client_write_key
+            .iter()
+            .zip(other.client_write_key.iter())
+        {
             diff |= a ^ b;
         }
-        for (a, b) in self.server_write_key.iter().zip(other.server_write_key.iter()) {
+        for (a, b) in self
+            .server_write_key
+            .iter()
+            .zip(other.server_write_key.iter())
+        {
             diff |= a ^ b;
         }
         diff == 0
@@ -357,7 +365,10 @@ impl Drop for SessionKeys {
     }
 }
 
-pub fn derive_session_keys(master_shared_secret: &[u8; 32], transcript_hash: &[u8; 32]) -> SessionKeys {
+pub fn derive_session_keys(
+    master_shared_secret: &[u8; 32],
+    transcript_hash: &[u8; 32],
+) -> SessionKeys {
     let hk = Hkdf::<Sha256>::new(Some(SESSION_SALT), master_shared_secret);
 
     let mut client_write_key = [0u8; 32];
@@ -393,7 +404,6 @@ pub fn derive_ratchet_step(key: &[u8; 32], label: &[u8]) -> [u8; 32] {
         .expect("HKDF expand ratchet step failed");
     okm
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -456,10 +466,22 @@ mod tests {
         let master_secret = [0x11u8; 32];
         let transcript = [0x22u8; 32];
         let session_keys = derive_session_keys(&master_secret, &transcript);
-        assert_eq!(session_keys.client_write_key(), &session_keys.client_write_key);
-        assert_eq!(session_keys.server_write_key(), &session_keys.server_write_key);
-        assert_eq!(session_keys.as_client_slice(), &session_keys.client_write_key[..]);
-        assert_eq!(session_keys.as_server_slice(), &session_keys.server_write_key[..]);
+        assert_eq!(
+            session_keys.client_write_key(),
+            &session_keys.client_write_key
+        );
+        assert_eq!(
+            session_keys.server_write_key(),
+            &session_keys.server_write_key
+        );
+        assert_eq!(
+            session_keys.as_client_slice(),
+            &session_keys.client_write_key[..]
+        );
+        assert_eq!(
+            session_keys.as_server_slice(),
+            &session_keys.server_write_key[..]
+        );
     }
 
     #[test]
@@ -709,8 +731,14 @@ mod tests {
         let inverted = keys.inverted();
         assert_eq!(inverted.client_write_key, server_k);
         assert_eq!(inverted.server_write_key, client_k);
-        assert_eq!(inverted.client_key_fingerprint(), keys.server_key_fingerprint());
-        assert_eq!(inverted.server_key_fingerprint(), keys.client_key_fingerprint());
+        assert_eq!(
+            inverted.client_key_fingerprint(),
+            keys.server_key_fingerprint()
+        );
+        assert_eq!(
+            inverted.server_key_fingerprint(),
+            keys.client_key_fingerprint()
+        );
 
         // Test invert in-place
         keys.invert();

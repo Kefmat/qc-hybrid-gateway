@@ -138,7 +138,6 @@ impl Default for PacketHeader {
 
 impl PacketHeader {
     pub fn new(packet_type: PacketType, seq: u64, payload_len: u32) -> Result<Self, String> {
-
         if payload_len as usize > MAX_FRAME_SIZE {
             return Err(format!(
                 "Payload length {} exceeds maximum frame size {}",
@@ -250,7 +249,10 @@ impl PacketHeader {
 
     /// Returns a compact summary string formatted as "PacketType:seq=X,len=Y".
     pub fn summary(&self) -> String {
-        format!("{}:seq={},len={}", self.packet_type, self.seq, self.payload_len)
+        format!(
+            "{}:seq={},len={}",
+            self.packet_type, self.seq, self.payload_len
+        )
     }
 
     /// Checks if this header's packet type matches the expected packet type.
@@ -481,7 +483,9 @@ impl fmt::Display for PacketFrame {
         write!(
             f,
             "PacketFrame({}, seq={}, len={})",
-            self.header.packet_type, self.header.seq, self.payload.len()
+            self.header.packet_type,
+            self.header.seq,
+            self.payload.len()
         )
     }
 }
@@ -511,7 +515,6 @@ impl AsRef<PacketHeader> for PacketFrame {
         &self.header
     }
 }
-
 
 pub const DEFAULT_REPLAY_WINDOW_SIZE: u64 = 64;
 
@@ -578,7 +581,9 @@ impl AntiReplayFilter {
 
     /// Checks if a sequence number is a replay of a previously seen sequence within the window.
     pub fn is_replay(&self, seq: u64) -> bool {
-        seq <= self.highest_seq && seq + self.window_size > self.highest_seq && self.seen.contains(&seq)
+        seq <= self.highest_seq
+            && seq + self.window_size > self.highest_seq
+            && self.seen.contains(&seq)
     }
 
     pub fn reset(&mut self) {
@@ -630,7 +635,9 @@ impl AntiReplayFilter {
     pub fn summary(&self) -> String {
         format!(
             "AntiReplayFilter(window={}, highest_seq={}, seen={})",
-            self.window_size, self.highest_seq, self.seen.len()
+            self.window_size,
+            self.highest_seq,
+            self.seen.len()
         )
     }
 }
@@ -641,14 +648,14 @@ impl fmt::Display for AntiReplayFilter {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn test_packet_frame_roundtrip() {
-        let frame = PacketFrame::new(PacketType::Data, 100, b"secure-pqc-payload".to_vec()).unwrap();
+        let frame =
+            PacketFrame::new(PacketType::Data, 100, b"secure-pqc-payload".to_vec()).unwrap();
         let encoded = frame.encode();
         let decoded = PacketFrame::decode(&encoded).expect("failed to decode frame");
 
@@ -834,7 +841,8 @@ mod tests {
         assert_eq!(header.to_bytes(), header.encode());
 
         let bytes = header.to_bytes();
-        let parsed_from_slice: PacketHeader = bytes.as_slice().try_into().expect("TryFrom slice failed");
+        let parsed_from_slice: PacketHeader =
+            bytes.as_slice().try_into().expect("TryFrom slice failed");
         assert_eq!(header, parsed_from_slice);
 
         let parsed_from_array: PacketHeader = bytes.try_into().expect("TryFrom array failed");
@@ -932,7 +940,10 @@ mod tests {
         assert_eq!(u8::from(PacketType::Ping), 0x04);
         assert_eq!(u8::from(PacketType::Pong), 0x05);
 
-        assert_eq!(PacketType::try_from(0x01).unwrap(), PacketType::HandshakeInit);
+        assert_eq!(
+            PacketType::try_from(0x01).unwrap(),
+            PacketType::HandshakeInit
+        );
         assert_eq!(PacketType::try_from(0x03).unwrap(), PacketType::Data);
         assert!(PacketType::try_from(0x99).is_err());
     }
@@ -947,7 +958,10 @@ mod tests {
         let frame_vec: Vec<u8> = frame_owned.into();
         assert_eq!(frame_vec, frame.encode());
 
-        let parsed: PacketFrame = frame_bytes.as_slice().try_into().expect("TryFrom slice failed");
+        let parsed: PacketFrame = frame_bytes
+            .as_slice()
+            .try_into()
+            .expect("TryFrom slice failed");
         assert_eq!(parsed, frame);
 
         let invalid_slice = b"too-short";
@@ -956,8 +970,14 @@ mod tests {
 
     #[test]
     fn test_packet_type_from_str() {
-        assert_eq!("HandshakeInit".parse::<PacketType>().unwrap(), PacketType::HandshakeInit);
-        assert_eq!("HandshakeResp".parse::<PacketType>().unwrap(), PacketType::HandshakeResp);
+        assert_eq!(
+            "HandshakeInit".parse::<PacketType>().unwrap(),
+            PacketType::HandshakeInit
+        );
+        assert_eq!(
+            "HandshakeResp".parse::<PacketType>().unwrap(),
+            PacketType::HandshakeResp
+        );
         assert_eq!("Data".parse::<PacketType>().unwrap(), PacketType::Data);
         assert_eq!("Ping".parse::<PacketType>().unwrap(), PacketType::Ping);
         assert_eq!("Pong".parse::<PacketType>().unwrap(), PacketType::Pong);
@@ -1084,8 +1104,3 @@ mod tests {
         assert_eq!(format!("{}", filter), summary);
     }
 }
-
-
-
-
-
